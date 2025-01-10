@@ -10,11 +10,13 @@ import {
     ModelClass,
 } from "@elizaos/core";
 import {
+    ACTIONS,
     combinedSparqlExample,
     dkgMemoryTemplate,
     generalSparqlQuery,
     sparqlExamples,
 } from "../constants.ts";
+import { sendNotification } from "../http-helper.ts";
 // @ts-ignore
 import DKG from "dkg.js";
 
@@ -72,7 +74,7 @@ async function constructSparqlQuery(
     4. Use 'OR' logic when constructing the query to ensure broader matching results. For example, if multiple keywords or concepts are provided, the query should match any of them, not all.
     5. Replace the examples with actual terms from the user's query.
     6. Always select distinct results by adding the DISTINCT keyword.
-    7. Always select headline and article body. Do not select other fields.
+    7. Always select headline, article body and ual fields. Do not select other fields.
 
     ** User Query **
     ${userQuery}
@@ -154,6 +156,17 @@ export class DKGProvider {
                 "SELECT"
             );
         }
+
+        elizaLogger.info(
+            `Sending ${queryOperationResult.data.length} results to the DKG explorer`
+        );
+
+        // Send notification to DKG Explorer
+        await sendNotification(
+            ACTIONS.QUERY,
+            queryOperationResult?.data?.map((res: { ual: string }) => res.ual),
+            ""
+        );
 
         elizaLogger.info(
             `Got ${queryOperationResult.data.length} results from the DKG`

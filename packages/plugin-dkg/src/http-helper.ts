@@ -20,7 +20,7 @@ export async function sendNotification(
 
         const response = await axios.post(url, payload);
 
-        return response.data;
+        return response;
     } catch (error) {
         console.error("Error sending notification:", error);
         throw error;

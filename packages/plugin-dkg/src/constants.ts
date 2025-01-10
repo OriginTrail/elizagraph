@@ -77,31 +77,33 @@ export const dkgMemoryTemplate = {
 //   encodingFormat: "audio/mpeg",
 // },
 
-export const combinedSparqlExample = `
-SELECT DISTINCT ?headline ?articleBody
-    WHERE {
-      ?s a <http://schema.org/SocialMediaPosting> .
-      ?s <http://schema.org/headline> ?headline .
-      ?s <http://schema.org/articleBody> ?articleBody .
+export const combinedSparqlExample = `SELECT DISTINCT ?headline ?articleBody ?ual
+WHERE {
+  GRAPH ?ual {
+    ?s a <http://schema.org/SocialMediaPosting> .
+    ?s <http://schema.org/headline> ?headline .
+    ?s <http://schema.org/articleBody> ?articleBody .
 
-      OPTIONAL {
-        ?s <http://schema.org/keywords> ?keyword .
-        ?keyword <http://schema.org/name> ?keywordName .
-      }
-
-      OPTIONAL {
-        ?s <http://schema.org/about> ?about .
-        ?about <http://schema.org/name> ?aboutName .
-      }
-
-      FILTER(
-        CONTAINS(LCASE(?headline), "example_keyword") ||
-        (BOUND(?keywordName) && CONTAINS(LCASE(?keywordName), "example_keyword")) ||
-        (BOUND(?aboutName) && CONTAINS(LCASE(?aboutName), "example_keyword"))
-      )
+    OPTIONAL {
+      ?s <http://schema.org/keywords> ?keyword .
+      ?keyword <http://schema.org/name> ?keywordName .
     }
-    LIMIT 10`;
 
+    OPTIONAL {
+      ?s <http://schema.org/about> ?about .
+      ?about <http://schema.org/name> ?aboutName .
+    }
+
+    FILTER(
+      CONTAINS(LCASE(?headline), "example_keyword") ||
+      (BOUND(?keywordName) && CONTAINS(LCASE(?keywordName), "example_keyword")) ||
+      (BOUND(?aboutName) && CONTAINS(LCASE(?aboutName), "example_keyword"))
+    )
+  }
+}
+LIMIT 10`;
+
+// todo: add graph ?ual if this is ever used
 export const sparqlExamples = [
     `
     SELECT DISTINCT ?headline ?articleBody
@@ -171,11 +173,13 @@ export const sparqlExamples = [
 ];
 
 export const generalSparqlQuery = `
-    SELECT DISTINCT ?headline ?articleBody
+    SELECT DISTINCT ?headline ?articleBody ?ual
     WHERE {
-      ?s a <http://schema.org/SocialMediaPosting> .
-      ?s <http://schema.org/headline> ?headline .
-      ?s <http://schema.org/articleBody> ?articleBody .
+    GRAPH ?ual {
+        ?s a <http://schema.org/SocialMediaPosting> .
+        ?s <http://schema.org/headline> ?headline .
+        ?s <http://schema.org/articleBody> ?articleBody .
+    }
     }
     LIMIT 10
   `;

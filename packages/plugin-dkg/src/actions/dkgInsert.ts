@@ -18,10 +18,10 @@ import {
     DKG_EXPLORER_LINKS,
     ACTIONS,
 } from "../constants.ts";
-// @ts-ignore
-import DKG from "dkg.js";
 import { sendNotification } from "../http-helper.ts";
 import { Scraper } from "agent-twitter-client";
+// @ts-ignore
+import DKG from "dkg.js";
 
 function formatCookiesFromArray(cookiesArray: any[]) {
     const cookieStrings = cookiesArray.map(
@@ -256,11 +256,15 @@ export const dkgInsert: Action = {
             postId
         );
 
-        // await sendNotification(
-        //     ACTIONS.CREATE,
-        //     [createAssetResult.UAL],
-        //     postKnowledgeGraph.articleBody ?? postKnowledgeGraph.headline
-        // );
+        await sendNotification(
+            ACTIONS.CREATE,
+            [createAssetResult.UAL],
+            postKnowledgeGraph.articleBody ?? postKnowledgeGraph.headline
+        );
+
+        elizaLogger.info(
+            `Sending ${createAssetResult.UAL} asset creation notification to the DKG explorer`
+        );
 
         return true;
     },
