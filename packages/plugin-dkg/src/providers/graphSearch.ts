@@ -149,6 +149,11 @@ export class DKGProvider {
 
         elizaLogger.info(`Got user query ${JSON.stringify(userQuery)}`);
 
+        // TO DO: check for login whether u need to do it
+
+        // TO DO: should just send query to drag here /server/api/example
+        // TO DO: or just /query no drag
+
         const query = await constructSparqlQuery(runtime, userQuery);
         elizaLogger.info(`Generated SPARQL query: ${query}`);
 
