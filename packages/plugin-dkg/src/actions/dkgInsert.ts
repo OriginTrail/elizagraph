@@ -70,8 +70,12 @@ export const dkgInsert: Action = {
             nodeApiVersion: "/v1",
         });
 
-        const currentPost = String(state.currentPost);
+        let currentPost = String(state.currentPost);
         elizaLogger.log(`currentPost: ${currentPost}`);
+
+        if (currentPost === "undefined") {
+            currentPost = _message?.content?.text;
+        }
 
         const userRegex = /From:.*\(@(\w+)\)/;
         let match = currentPost.match(userRegex);
@@ -84,111 +88,224 @@ export const dkgInsert: Action = {
             elizaLogger.log("No user mention found or invalid input.");
         }
 
-        const createDKGMemoryContext = composeContext({
-            state,
-            template: createDKGMemoryTemplate,
-        });
+        // First check minimum content length before proceeding with LLM evaluation
+        const MIN_CONTENT_LENGTH = 100; // Increased minimum length to ensure substantial content
 
-        const memoryKnowledgeGraphText = await generateText({
-            runtime,
-            context: createDKGMemoryContext,
-            modelClass: ModelClass.LARGE,
-        });
+        let shouldApprove = false,
+            createAssetResult,
+            reviewContent = false;
 
-        const jsonMatch = memoryKnowledgeGraphText.match(/\{[\s\S]*\}/);
+        if (currentPost.length >= MIN_CONTENT_LENGTH) {
+            // Evaluate if post contains useful knowledge about OriginTrail ecosystem
+            const evaluationContext = `Evaluate if the following post contains useful knowledge about OriginTrail, the Decentralized Knowledge Graph or the OriginTrail ecosystem.
 
-        let memoryKnowledgeGraph = null;
-        if (jsonMatch) {
-            try {
-                memoryKnowledgeGraph = JSON.parse(jsonMatch[0].trim());
-                elizaLogger.log(
-                    "Parsed Memory Knowledge Graph:\n",
-                    memoryKnowledgeGraph,
-                );
-            } catch (error) {
-                elizaLogger.error("Failed to parse JSON-LD:", error);
-            }
-        } else {
-            elizaLogger.error("No valid JSON-LD object found in the response.");
-        }
+        Only respond with 'true' or 'false' based on these criteria:
+        - Must contain detailed technical explanations or comprehensive insights
+        - Must be educational in nature with specific examples or use-cases
+        - Must be directly related to OriginTrail technology or ecosystem
+        - Should be substantial enough to provide real value to the community
 
-        let createAssetResult;
+        Examples:
+        "OriginTrail's v6 Knowledge Graph implements a unique consensus mechanism called proof-of-knowledge, which ensures data integrity across the network. This works by having multiple nodes validate and store the same data assets, creating a decentralized system of truth. The implementation uses zero-knowledge proofs to verify data without exposing sensitive information." -> true
 
-        // TODO: also store reply to the KA, aside of the question
+        "The latest DKG update introduces significant improvements to the asset creation process. Now, when publishing assets to the network, users can specify multiple blockchains for verification, enabling cross-chain interoperability. This is achieved through the network's unique ability to create verifiable knowledge assets that maintain their integrity across different blockchain networks." -> true
 
-        try {
-            elizaLogger.log("Publishing message to DKG");
+        "I love OriginTrail, great project!" -> false (too vague)
+        "Bitcoin price is going up today" -> false (unrelated)
+        "The DKG is fast" -> false (lacks detail)
 
-            elizaLogger.log(
-                `KA: ${JSON.stringify(memoryKnowledgeGraph, null, 2)}`,
-            );
+        Post to evaluate:\n${currentPost}`;
 
-            createAssetResult = await DkgClient.asset.create(
-                {
-                    public: memoryKnowledgeGraph,
-                },
-                { epochsNum: 12 },
-            );
+            const evaluationResult = await generateText({
+                runtime,
+                context: evaluationContext,
+                modelClass: ModelClass.LARGE,
+            });
 
-            elizaLogger.log("======================== ASSET CREATED");
-            elizaLogger.log(JSON.stringify(createAssetResult));
-        } catch (error) {
-            elizaLogger.error(
-                "Error occurred while publishing message to DKG:",
-                error.message,
-            );
+            // Additional validation to ensure response is boolean
+            shouldApprove = evaluationResult
+                .toLowerCase()
+                .trim()
+                .includes("true");
 
-            if (error.stack) {
-                elizaLogger.error("Stack trace:", error.stack);
-            }
-            if (error.response) {
-                elizaLogger.error(
-                    "Response data:",
-                    JSON.stringify(error.response.data, null, 2),
-                );
+            elizaLogger.log(`Knowledge evaluation result: ${shouldApprove}`);
+
+            if (!shouldApprove) {
+                callback({
+                    text: `Thank you for your message! However, it doesn't contain enough educational or technical content about OriginTrail to be added to the knowledge base. Please try sharing more detailed insights about the technology or ecosystem next time! @${twitterUser}`,
+                });
+                return true;
             }
 
-            if (
-                error.message.includes("Unexpected") ||
-                error.message.includes("JSON")
-            ) {
-                elizaLogger.warn(
-                    "Detected JSON formatting issue. Attempting to fix...",
-                );
+            const createDKGMemoryContext = composeContext({
+                state,
+                template: createDKGMemoryTemplate,
+            });
+
+            const memoryKnowledgeGraphText = await generateText({
+                runtime,
+                context: createDKGMemoryContext,
+                modelClass: ModelClass.LARGE,
+            });
+
+            const jsonMatch = memoryKnowledgeGraphText.match(/\{[\s\S]*\}/);
+
+            let memoryKnowledgeGraph = null;
+            if (jsonMatch) {
                 try {
-                    const fixedJSON = await generateText({
-                        runtime,
-                        context: `Fix this malformed JSON-LD and return only the corrected JSON-LD:\n${JSON.stringify(memoryKnowledgeGraph, null, 2)}
+                    memoryKnowledgeGraph = JSON.parse(jsonMatch[0].trim());
+                    elizaLogger.log(
+                        "Parsed Memory Knowledge Graph:\n",
+                        memoryKnowledgeGraph,
+                    );
+                } catch (error) {
+                    elizaLogger.error("Failed to parse JSON-LD:", error);
+                }
+            } else {
+                elizaLogger.error(
+                    "No valid JSON-LD object found in the response.",
+                );
+            }
+
+            // TODO: also store reply to the KA, aside of the question
+
+            try {
+                elizaLogger.log("Publishing message to DKG");
+
+                elizaLogger.log(
+                    `KA: ${JSON.stringify(memoryKnowledgeGraph, null, 2)}`,
+                );
+
+                createAssetResult = await DkgClient.asset.create(
+                    {
+                        public: memoryKnowledgeGraph,
+                    },
+                    { epochsNum: 12 },
+                );
+
+                elizaLogger.log("======================== ASSET CREATED");
+                elizaLogger.log(JSON.stringify(createAssetResult));
+
+                const stageToParanetResult =
+                    await DkgClient.paranet.stageKnowledgeCollection(
+                        createAssetResult.UAL,
+                        runtime.getSetting("DKG_PARANET_UAL"),
+                    );
+
+                elizaLogger.log(
+                    "======================== STAGED TO PARANET",
+                    JSON.stringify(stageToParanetResult),
+                );
+
+                const reviewKnowledgeCollectionResult =
+                    await DkgClient.paranet.reviewKnowledgeCollection(
+                        createAssetResult.UAL,
+                        runtime.getSetting("DKG_PARANET_UAL"),
+                        shouldApprove,
+                    );
+
+                elizaLogger.log(
+                    "======================== REVIEWED KNOWLEDGE COLLECTION",
+                    JSON.stringify(reviewKnowledgeCollectionResult),
+                );
+
+                reviewContent =
+                    await DkgClient.paranet.isKnowledgeCollectionApproved(
+                        createAssetResult.UAL,
+                        runtime.getSetting("DKG_PARANET_UAL"),
+                    );
+            } catch (error) {
+                elizaLogger.error(
+                    "Error occurred while publishing message to DKG:",
+                    error.message,
+                );
+
+                if (error.stack) {
+                    elizaLogger.error("Stack trace:", error.stack);
+                }
+                if (error.response) {
+                    elizaLogger.error(
+                        "Response data:",
+                        JSON.stringify(error.response.data, null, 2),
+                    );
+                }
+
+                if (
+                    error.message.includes("Unexpected") ||
+                    error.message.includes("JSON")
+                ) {
+                    elizaLogger.warn(
+                        "Detected JSON formatting issue. Attempting to fix...",
+                    );
+                    try {
+                        const fixedJSON = await generateText({
+                            runtime,
+                            context: `Fix this malformed JSON-LD and return only the corrected JSON-LD:\n${JSON.stringify(memoryKnowledgeGraph, null, 2)}
 
                       Make sure to only output the JSON-LD object. DO NOT OUTPUT ANYTHING ELSE, DONT ADD ANY COMMENTS, REMARKS AND DO NOT WRAP IT IN A CODE/JSON BLOCK, JUST THE JSON LD CONTENT WRAPPED IN { }.`,
-                        modelClass: ModelClass.LARGE,
-                    });
+                            modelClass: ModelClass.LARGE,
+                        });
 
-                    elizaLogger.log(
-                        `Fixed JSON generated by LLM: ${fixedJSON}. Retrying...`,
-                    );
+                        elizaLogger.log(
+                            `Fixed JSON generated by LLM: ${fixedJSON}. Retrying...`,
+                        );
 
-                    createAssetResult = await DkgClient.asset.create(
-                        { public: JSON.parse(fixedJSON) },
-                        { epochsNum: 12 },
-                    );
+                        createAssetResult = await DkgClient.asset.create(
+                            { public: JSON.parse(fixedJSON) },
+                            { epochsNum: 12 },
+                        );
 
-                    elizaLogger.log(
-                        "======================== ASSET CREATED AFTER FIX",
-                    );
-                    elizaLogger.log(JSON.stringify(createAssetResult));
-                } catch (llmError) {
-                    elizaLogger.error(
-                        "Failed to fix JSON using LLM:",
-                        llmError.message,
-                    );
+                        elizaLogger.log(
+                            "======================== ASSET CREATED AFTER FIX",
+                        );
+                        elizaLogger.log(JSON.stringify(createAssetResult));
+
+                        const stageToParanetResult =
+                            await DkgClient.paranet.stageKnowledgeCollection(
+                                createAssetResult.UAL,
+                                runtime.getSetting("DKG_PARANET_UAL"),
+                            );
+
+                        elizaLogger.log(
+                            "======================== STAGED TO PARANET",
+                            JSON.stringify(stageToParanetResult),
+                        );
+
+                        const reviewKnowledgeCollectionResult =
+                            await DkgClient.paranet.reviewKnowledgeCollection(
+                                createAssetResult.UAL,
+                                runtime.getSetting("DKG_PARANET_UAL"),
+                                shouldApprove,
+                            );
+
+                        elizaLogger.log(
+                            "======================== REVIEWED KNOWLEDGE COLLECTION",
+                            JSON.stringify(reviewKnowledgeCollectionResult),
+                        );
+
+                        reviewContent =
+                            await DkgClient.paranet.isKnowledgeCollectionApproved(
+                                createAssetResult.UAL,
+                                runtime.getSetting("DKG_PARANET_UAL"),
+                            );
+
+                        elizaLogger.log(
+                            "======================== REVIEWED KNOWLEDGE COLLECTION",
+                            JSON.stringify(reviewContent),
+                        );
+                    } catch (llmError) {
+                        elizaLogger.error(
+                            "Failed to fix JSON using LLM:",
+                            llmError.message,
+                        );
+                    }
                 }
             }
         }
 
-        if (createAssetResult.UAL) {
+        if (createAssetResult?.UAL) {
             callback({
-                text: `Created a new memory!\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
+                text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
             });
         } else {
             callback({
