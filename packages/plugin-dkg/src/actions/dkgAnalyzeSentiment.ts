@@ -22,7 +22,7 @@ import {
     extractSentimentAnalysisTopic,
 } from "../constants";
 import { fetchFileFromUrl, getSentimentChart } from "../http-helper";
-
+import { formatCookiesFromArray } from "../utils.ts";
 let DkgClient: any = null;
 
 export async function postTweet(
@@ -69,18 +69,6 @@ export async function postTweet(
         });
         return false;
     }
-}
-
-function formatCookiesFromArray(cookiesArray: any[]) {
-    const cookieStrings = cookiesArray.map(
-        (cookie) =>
-            `${cookie.key}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}; ${
-                cookie.secure ? "Secure" : ""
-            }; ${cookie.httpOnly ? "HttpOnly" : ""}; SameSite=${
-                cookie.sameSite || "Lax"
-            }`,
-    );
-    return cookieStrings;
 }
 
 function calculateVaderScore(statement) {

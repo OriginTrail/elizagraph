@@ -18,8 +18,18 @@ import { createDKGMemoryTemplate } from "../templates.ts";
 // @ts-ignore
 import DKG from "dkg.js";
 import { DKGMemorySchema, isDKGMemoryContent } from "../types.ts";
+import { Scraper } from "agent-twitter-client";
+import { formatCookiesFromArray } from "../utils.ts";
 
 let DkgClient: any = null;
+
+function cleanRecentMessages(recentMessages) {
+    return recentMessages
+        .split("\n")
+        .map((line) => line.replace(/\(.*?\) \[.*?\] .*?: /, ""))
+        .join(" ")
+        .trim();
+}
 
 export const dkgInsert: Action = {
     name: "INSERT_MEMORY_ACTION",
@@ -72,7 +82,8 @@ export const dkgInsert: Action = {
         });
 
         let currentPost = String(state.currentPost);
-        elizaLogger.log(`currentPost: ${currentPost}`);
+        let recentMessages = cleanRecentMessages(String(state.recentMessages));
+        elizaLogger.log(`recentMessages: ${recentMessages}`);
 
         if (currentPost === "undefined") {
             currentPost = _message?.content?.text;
@@ -96,21 +107,22 @@ export const dkgInsert: Action = {
             createAssetResult,
             reviewContent = false;
 
-        if (currentPost.length >= MIN_CONTENT_LENGTH) {
+        if (recentMessages.length >= MIN_CONTENT_LENGTH) {
             // Check if post already exists in the DKG
             const randomStart = Math.max(
                 0,
                 Math.floor(
-                    Math.random() * Math.max(0, currentPost.length - 100),
+                    Math.random() * Math.max(0, recentMessages.length - 100),
                 ),
             );
             const searchText =
-                currentPost.length <= 100
-                    ? currentPost
-                    : currentPost.slice(randomStart, randomStart + 100);
+                recentMessages.length <= 100
+                    ? recentMessages
+                    : recentMessages.slice(randomStart, randomStart + 100);
 
             // take random 100 characters from the post to search for
             const similarMemoriesQuery = getSimilarMemoriesQuery(searchText);
+            // TODO: search only paranet
             const similarMemoriesQueryResult = await DkgClient.graph.query(
                 similarMemoriesQuery,
                 "SELECT",
@@ -128,13 +140,15 @@ export const dkgInsert: Action = {
             }
 
             // Evaluate if post contains useful knowledge about OriginTrail ecosystem
-            const evaluationContext = `Evaluate if the following post contains useful knowledge about OriginTrail, the Decentralized Knowledge Graph or the OriginTrail ecosystem.
+            const evaluationContext = `Evaluate if the following thread contains useful knowledge about OriginTrail, the Decentralized Knowledge Graph or the OriginTrail ecosystem.
 
         Only respond with 'true' or 'false' based on these criteria:
         - Must contain detailed technical explanations or comprehensive insights
         - Must be educational in nature with specific examples or use-cases
         - Must be directly related to OriginTrail technology or ecosystem
         - Should be substantial enough to provide real value to the community
+        - Do not reward obviously low-quality work, such as extremely short (one sentence), vague, or generic posts.
+        - If a post provides some useful knowledge but is not highly technical, lean towards ‘true’ rather than ‘false’ —avoid being overly strict.
 
         Examples:
         "OriginTrail's v6 Knowledge Graph implements a unique consensus mechanism called proof-of-knowledge, which ensures data integrity across the network. This works by having multiple nodes validate and store the same data assets, creating a decentralized system of truth. The implementation uses zero-knowledge proofs to verify data without exposing sensitive information." -> true
@@ -145,7 +159,7 @@ export const dkgInsert: Action = {
         "Bitcoin price is going up today" -> false (unrelated)
         "The DKG is fast" -> false (lacks detail)
 
-        Post to evaluate:\n${currentPost}`;
+        Thread to evaluate:\n${recentMessages}`;
 
             const evaluationResult = await generateText({
                 runtime,
@@ -202,6 +216,86 @@ export const dkgInsert: Action = {
 
             try {
                 elizaLogger.log("Publishing message to DKG");
+
+                // get info from twitter
+                const scraper = new Scraper();
+
+                const username = process.env.TWITTER_USERNAME;
+                const password = process.env.TWITTER_PASSWORD;
+                const email = process.env.TWITTER_EMAIL;
+                const twitter2faSecret = process.env.TWITTER_2FA_SECRET;
+                if (!username || !password) {
+                    elizaLogger.error(
+                        "Twitter credentials not configured in environment",
+                    );
+                    return false;
+                }
+                await scraper.login(
+                    username,
+                    password,
+                    email,
+                    twitter2faSecret,
+                );
+                if (!(await scraper.isLoggedIn())) {
+                    let attempts = 0;
+                    const maxAttempts = 10;
+
+                    while (attempts < maxAttempts) {
+                        attempts++;
+                        elizaLogger.warn(
+                            `Login attempt ${attempts} with cookies...`,
+                        );
+
+                        await scraper.setCookies(
+                            formatCookiesFromArray(
+                                JSON.parse(process.env.TWITTER_COOKIES),
+                            ),
+                        );
+
+                        if (await scraper.isLoggedIn()) {
+                            elizaLogger.info(
+                                "Successfully logged in with cookies.",
+                            );
+                            break;
+                        }
+
+                        if (attempts === maxAttempts) {
+                            elizaLogger.error(
+                                "Failed to login to Twitter after multiple attempts.",
+                            );
+                        }
+                    }
+                }
+                if (await scraper.isLoggedIn()) {
+                    const profile = await scraper.getProfile(twitterUser);
+
+                    elizaLogger.log("Profile:", profile);
+
+                    const followersCount = profile.followersCount;
+                    const followingCount = profile.followingCount;
+                    const likesCount = profile.likesCount;
+                    const isBlueVerified = profile.isBlueVerified;
+                    const isVerified = profile.isVerified;
+                    const name = profile.name;
+
+                    memoryKnowledgeGraph.author = {
+                        "@type": "Person",
+                        "@id": `https://twitter.com/${twitterUser}`,
+                        name: name,
+                        username: twitterUser,
+                        followersCount: followersCount,
+                        followingCount: followingCount,
+                        likesCount: likesCount,
+                        isBlueVerified: isBlueVerified,
+                        isVerified: isVerified,
+                    };
+                } else {
+                    memoryKnowledgeGraph.author = {
+                        "@type": "Person",
+                        "@id": `https://twitter.com/${twitterUser}`,
+                    };
+                }
+                // done getting info from twitter
 
                 elizaLogger.log(
                     `KA: ${JSON.stringify(memoryKnowledgeGraph, null, 2)}`,
@@ -320,11 +414,8 @@ export const dkgInsert: Action = {
                         "======================== REVIEWED KNOWLEDGE COLLECTION",
                         JSON.stringify(reviewContent),
                     );
-                } catch (llmError) {
-                    elizaLogger.error(
-                        "Failed to fix JSON using LLM:",
-                        llmError.message,
-                    );
+                } catch (error) {
+                    elizaLogger.error("Failed to republish:", error.message);
                 }
             }
         } else {
@@ -335,6 +426,7 @@ export const dkgInsert: Action = {
         }
 
         if (createAssetResult?.UAL) {
+            // add to vector database
             callback({
                 text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
             });

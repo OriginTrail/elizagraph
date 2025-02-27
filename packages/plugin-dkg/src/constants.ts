@@ -5,30 +5,7 @@ export const dkgMemoryTemplate = {
     headline: "<describe memory in a short way, as a title here>",
     articleBody:
         "Check out this amazing project on decentralized cloud networks! @DecentralCloud #Blockchain #Web3",
-    author: {
-        "@type": "Person",
-        "@id": "uuid:john:doe",
-        name: "John Doe",
-        identifier: "@JohnDoe",
-        url: "https://twitter.com/JohnDoe",
-    },
     dateCreated: "yyyy-mm-ddTHH:mm:ssZ",
-    interactionStatistic: [
-        {
-            "@type": "InteractionCounter",
-            interactionType: {
-                "@type": "LikeAction",
-            },
-            userInteractionCount: 150,
-        },
-        {
-            "@type": "InteractionCounter",
-            interactionType: {
-                "@type": "ShareAction",
-            },
-            userInteractionCount: 45,
-        },
-    ],
     mentions: [
         {
             "@type": "Person",

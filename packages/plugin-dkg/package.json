@@ -20,7 +20,7 @@
     ],
     "dependencies": {
         "@elizaos/core": "workspace:*",
-        "dkg.js": "github:OriginTrail/dkg.js#v8/paranet-incentives-pool-contract-changes",
+        "dkg.js": "8.0.7",
         "tsup": "8.3.5",
         "agent-twitter-client": "0.0.18",
         "vader-sentiment": "^1.1.3",
