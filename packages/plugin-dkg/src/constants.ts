@@ -246,6 +246,19 @@ export function getRelatedDatasetsQuery(topic: string) {
     }`;
 }
 
+export function getSimilarMemoriesQuery(memory: string) {
+    return `
+    SELECT DISTINCT ?headline ?articleBody
+    WHERE {
+      ?s a <http://schema.org/SocialMediaPosting> .
+      ?s <http://schema.org/headline> ?headline .
+      ?s <http://schema.org/articleBody> ?articleBody .
+
+      FILTER(CONTAINS(LCASE(?articleBody), LCASE("${memory}")))
+    }
+  `;
+}
+
 export function extractSentimentAnalysisTopic(post: string) {
     return `You are an AI assistant that extracts the main financial topic from a given social media post. Your task is to identify and return only a **stock ticker (cashtag, e.g., $AAPL, $BTC), a hashtag (e.g., #Ethereum, #SP500), a financial asset name (e.g., Bitcoin, Nvidia, Tesla), or an index (e.g., S&P 500, Nasdaq 100)** mentioned in the post.
 
