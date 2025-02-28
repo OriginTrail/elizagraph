@@ -119,30 +119,37 @@ export const dkgInsert: Action = {
                     : currentPost.slice(randomStart, randomStart + 100);
 
             // take random 100 characters from the post to search for
-            const similarMemoriesQuery = getSimilarMemoriesQuery(searchText);
-            const similarMemoriesQueryResult = await DkgClient.graph.query(
-                similarMemoriesQuery,
-                "SELECT",
-                { paranetUAL: runtime.getSetting("DKG_PARANET_UAL") },
-            );
+            let similarMemoriesQueryResult;
+            try {
+                const similarMemoriesQuery =
+                    getSimilarMemoriesQuery(searchText);
+                similarMemoriesQueryResult = await DkgClient.graph.query(
+                    similarMemoriesQuery,
+                    "SELECT",
+                    { paranetUAL: runtime.getSetting("DKG_PARANET_UAL") },
+                );
 
-            if (
-                similarMemoriesQueryResult?.data &&
-                similarMemoriesQueryResult.data?.length
-            ) {
-                // since data exists and there's data in it, it means similar memories already exists so we can return a message to the user stating that this knowledge was already provided so we will not create it again, and return true
-                callback({
-                    text: `Thank you for sharing this knowledge about OriginTrail! However, similar information has already been added to our knowledge base. To avoid duplication, we encourage you to share new and unique insights about the technology and ecosystem! @${telegramUser}`,
-                });
-                return true;
+                if (
+                    similarMemoriesQueryResult?.data &&
+                    similarMemoriesQueryResult.data?.length
+                ) {
+                    // since data exists and there's data in it, it means similar memories already exists so we can return a message to the user stating that this knowledge was already provided so we will not create it again, and return true
+                    callback({
+                        text: `Thank you for sharing this knowledge about OriginTrail! However, similar information has already been added to our knowledge base. To avoid duplication, we encourage you to share new and unique insights about the technology and ecosystem! @${telegramUser}`,
+                    });
+                    return true;
+                }
+            } catch (error) {
+                elizaLogger.error("Error querying similar memories:", error);
+                // Continue execution even if query fails
             }
 
             // Evaluate if post contains useful knowledge about OriginTrail ecosystem
             const evaluationContext = `Evaluate if the following thread contains useful knowledge about OriginTrail, the Decentralized Knowledge Graph or the OriginTrail ecosystem.
 
         Only respond with 'true' or 'false' based on these criteria:
-        - Must contain detailed technical explanations or comprehensive insights
-        - Must be educational in nature with specific examples or use-cases
+        - Must contain comprehensive insights
+        - Must be educational in nature
         - Must be directly related to OriginTrail technology or ecosystem
         - Should be substantial enough to provide real value to the community
         - Do not reward obviously low-quality work, such as extremely short (one sentence), vague, or generic posts.
