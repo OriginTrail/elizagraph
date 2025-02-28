@@ -130,7 +130,11 @@ export const dkgInsert: Action = {
                 );
 
                 elizaLogger.log(
-                    `Found ${similarMemoriesQueryResult?.data?.length} similar memories`,
+                    `similarMemoriesQueryResult: ${JSON.stringify(
+                        similarMemoriesQueryResult,
+                        null,
+                        2,
+                    )}`,
                 );
 
                 if (
