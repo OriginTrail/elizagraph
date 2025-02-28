@@ -150,24 +150,28 @@ export const dkgInsert: Action = {
             }
 
             // Evaluate if post contains useful knowledge about OriginTrail ecosystem
-            const evaluationContext = `Evaluate if the following thread contains useful knowledge about OriginTrail, the Decentralized Knowledge Graph or the OriginTrail ecosystem.
+            const evaluationContext = `Evaluate if the following thread contains useful knowledge about OriginTrail, Decentralized Knowledge Graphs (DKG), AI, Knowledge Graphs, or blockchain technology.
 
         Only respond with 'true' or 'false' based on these criteria:
         - Must contain detailed technical explanations or comprehensive insights
         - Must be educational in nature with specific examples or use-cases
-        - Must be directly related to OriginTrail technology or ecosystem
+        - Must be related to OriginTrail, DKGs, AI, Knowledge Graphs, or blockchain technology
         - Should be substantial enough to provide real value to the community
-        - Do not reward obviously low-quality work, such as extremely short (one sentence), vague, or generic posts.
-        - If a post provides some useful knowledge but is not highly technical, lean towards ‘true’ rather than ‘false’ —avoid being overly strict.
+        - Do not reward obviously low-quality work, such as extremely short (one sentence), vague, or generic posts
+        - If a post provides some useful knowledge but is not highly technical, lean towards 'true' rather than 'false' —avoid being overly strict
 
         Examples:
-        "OriginTrail's v6 Knowledge Graph implements a unique consensus mechanism called proof-of-knowledge, which ensures data integrity across the network. This works by having multiple nodes validate and store the same data assets, creating a decentralized system of truth. The implementation uses zero-knowledge proofs to verify data without exposing sensitive information." -> true
+        "OriginTrail's v6 Knowledge Graph implements a unique consensus mechanism called proof-of-knowledge, which ensures data integrity across the network. This works by having multiple nodes validate and store the same data assets, creating a decentralized system of truth." -> true
 
-        "The latest DKG update introduces significant improvements to the asset creation process. Now, when publishing assets to the network, users can specify multiple blockchains for verification, enabling cross-chain interoperability. This is achieved through the network's unique ability to create verifiable knowledge assets that maintain their integrity across different blockchain networks." -> true
+        "Knowledge graphs are powerful tools for organizing and connecting data in a semantic way. They use nodes to represent entities and edges to show relationships between them, enabling complex queries and knowledge discovery that traditional databases can't match." -> true
 
-        "I love OriginTrail, great project!" -> false (too vague)
-        "Bitcoin price is going up today" -> false (unrelated)
-        "The DKG is fast" -> false (lacks detail)
+        "AI systems using Retrieval Augmented Generation (RAG) can access and incorporate relevant documents and data during inference, enabling more accurate and factual responses compared to pure language models working from training data alone." -> true
+
+        "The integration of blockchain with knowledge graphs creates immutable audit trails for data provenance, ensuring that knowledge assets can be verified and trusted across decentralized networks." -> true
+
+        "I love AI!" -> false (too vague)
+        "Crypto prices are going up" -> false (lacks educational value)
+        "Knowledge graphs are cool" -> false (lacks detail)
 
         Thread to evaluate:\n${recentMessages}`;
 
