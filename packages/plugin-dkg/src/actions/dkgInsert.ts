@@ -23,6 +23,13 @@ import { formatCookiesFromArray } from "../utils.ts";
 
 let DkgClient: any = null;
 
+function extractActor(text) {
+    const lines = text.split("\n").filter((line) => line.trim() !== "");
+    const actors = lines.slice(1);
+
+    return actors.find((actor) => actor.trim() !== "ChatDKG") || null;
+}
+
 function cleanRecentMessages(recentMessages) {
     return recentMessages
         .split("\n")
@@ -61,7 +68,7 @@ export const dkgInsert: Action = {
         "Create a memory on the OriginTrail Decentralized Knowledge Graph after each message. You should run this action for ALL generic messages EXCEPT when the user asks you about your thoughts on stock, cryptocurrency, token or a financial asset.",
     handler: async (
         runtime: IAgentRuntime,
-        _message: Memory,
+        message: Memory,
         state: State,
         _options: { [key: string]: unknown },
         callback: HandlerCallback,
@@ -81,24 +88,15 @@ export const dkgInsert: Action = {
             nodeApiVersion: "/v1",
         });
 
-        let currentPost = String(state.currentPost);
+        let currentPost = message.content.text;
         let recentMessages = cleanRecentMessages(String(state.recentMessages));
         elizaLogger.log(`recentMessages: ${recentMessages}`);
 
         if (currentPost === "undefined") {
-            currentPost = _message?.content?.text;
+            currentPost = message?.content?.text;
         }
 
-        const userRegex = /From:.*\(@(\w+)\)/;
-        let match = currentPost.match(userRegex);
-        let twitterUser = "";
-
-        if (match && match[1]) {
-            twitterUser = match[1];
-            elizaLogger.log(`Extracted user: @${twitterUser}`);
-        } else {
-            elizaLogger.log("No user mention found or invalid input.");
-        }
+        const telegramUser = extractActor(state.actors);
 
         // First check minimum content length before proceeding with LLM evaluation
         const MIN_CONTENT_LENGTH = 100; // Increased minimum length to ensure substantial content
@@ -134,7 +132,7 @@ export const dkgInsert: Action = {
             ) {
                 // since data exists and there's data in it, it means similar memories already exists so we can return a message to the user stating that this knowledge was already provided so we will not create it again, and return true
                 callback({
-                    text: `Thank you for sharing this knowledge about OriginTrail! However, similar information has already been added to our knowledge base. To avoid duplication, we encourage you to share new and unique insights about the technology and ecosystem! @${twitterUser}`,
+                    text: `Thank you for sharing this knowledge about OriginTrail! However, similar information has already been added to our knowledge base. To avoid duplication, we encourage you to share new and unique insights about the technology and ecosystem! @${telegramUser}`,
                 });
                 return true;
             }
@@ -177,7 +175,7 @@ export const dkgInsert: Action = {
 
             if (!shouldApprove) {
                 callback({
-                    text: `Thank you for your message! However, it doesn't contain enough educational or technical content about OriginTrail to be added to the knowledge base. Please try sharing more detailed insights about the technology or ecosystem next time! @${twitterUser}`,
+                    text: `Thank you for your message! However, it doesn't contain enough educational or technical content about OriginTrail to be added to the knowledge base. Please try sharing more detailed insights about the technology or ecosystem next time! @${telegramUser}`,
                 });
                 return true;
             }
@@ -266,36 +264,11 @@ export const dkgInsert: Action = {
                         }
                     }
                 }
-                if (await scraper.isLoggedIn()) {
-                    const profile = await scraper.getProfile(twitterUser);
 
-                    elizaLogger.log("Profile:", profile);
-
-                    const followersCount = profile.followersCount;
-                    const followingCount = profile.followingCount;
-                    const likesCount = profile.likesCount;
-                    const isBlueVerified = profile.isBlueVerified;
-                    const isVerified = profile.isVerified;
-                    const name = profile.name;
-
-                    memoryKnowledgeGraph.author = {
-                        "@type": "Person",
-                        "@id": `https://twitter.com/${twitterUser}`,
-                        name: name,
-                        username: twitterUser,
-                        followersCount: followersCount,
-                        followingCount: followingCount,
-                        likesCount: likesCount,
-                        isBlueVerified: isBlueVerified,
-                        isVerified: isVerified,
-                    };
-                } else {
-                    memoryKnowledgeGraph.author = {
-                        "@type": "Person",
-                        "@id": `https://twitter.com/${twitterUser}`,
-                    };
-                }
-                // done getting info from twitter
+                memoryKnowledgeGraph.author = {
+                    "@type": "Person",
+                    "@id": `https://t.me/${telegramUser}`,
+                };
 
                 elizaLogger.log(
                     `KA: ${JSON.stringify(memoryKnowledgeGraph, null, 2)}`,
@@ -420,7 +393,7 @@ export const dkgInsert: Action = {
             }
         } else {
             callback({
-                text: `Thank you for your message! However, it doesn't contain enough educational or technical content about OriginTrail to be added to the knowledge base. Please try sharing more detailed insights about the technology or ecosystem next time! @${twitterUser}`,
+                text: `Thank you for your message! However, it doesn't contain enough educational or technical content about OriginTrail to be added to the knowledge base. Please try sharing more detailed insights about the technology or ecosystem next time! @${telegramUser}`,
             });
             return true;
         }
@@ -428,7 +401,7 @@ export const dkgInsert: Action = {
         if (createAssetResult?.UAL && reviewContent) {
             // add to vector database
             callback({
-                text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
+                text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${telegramUser}`,
             });
         } else {
             callback({
