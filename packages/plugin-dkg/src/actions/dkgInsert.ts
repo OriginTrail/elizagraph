@@ -112,20 +112,20 @@ export const dkgInsert: Action = {
             const randomStart = Math.max(
                 0,
                 Math.floor(
-                    Math.random() * Math.max(0, recentMessages.length - 100),
+                    Math.random() * Math.max(0, currentPost.length - 100),
                 ),
             );
             const searchText =
-                recentMessages.length <= 100
-                    ? recentMessages
-                    : recentMessages.slice(randomStart, randomStart + 100);
+                currentPost.length <= 100
+                    ? currentPost
+                    : currentPost.slice(randomStart, randomStart + 100);
 
             // take random 100 characters from the post to search for
             const similarMemoriesQuery = getSimilarMemoriesQuery(searchText);
-            // TODO: search only paranet
             const similarMemoriesQueryResult = await DkgClient.graph.query(
                 similarMemoriesQuery,
                 "SELECT",
+                { paranetUAL: runtime.getSetting("DKG_PARANET_UAL") },
             );
 
             if (
@@ -425,14 +425,14 @@ export const dkgInsert: Action = {
             return true;
         }
 
-        if (createAssetResult?.UAL) {
+        if (createAssetResult?.UAL && reviewContent) {
             // add to vector database
             callback({
                 text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
             });
         } else {
             callback({
-                text: `Apologies, something went wrong with creating the memory.`,
+                text: `Apologies, something went wrong with creating the memory and adding it to the paranet.`,
             });
         }
 
