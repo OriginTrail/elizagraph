@@ -129,7 +129,7 @@ async function structureKA(
         );
     } catch (error) {
         console.error("Failed to fetch previous analyses:", error);
-        previousAnalyses = [];
+        previousAnalyses = { data: [] };
     }
 
     const allTweets: (Tweet & { vaderSentimentScore: number })[] =
@@ -184,7 +184,7 @@ async function structureKA(
         );
     } catch (error) {
         console.error("Failed to fetch related datasets:", error);
-        relatedDatasets = [];
+        relatedDatasets = { data: [] };
     }
 
     const ka = {
