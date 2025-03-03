@@ -24,10 +24,19 @@ import { formatCookiesFromArray } from "../utils.ts";
 let DkgClient: any = null;
 
 function extractActor(text) {
-    const lines = text.split("\n").filter((line) => line.trim() !== "");
-    const actors = lines.slice(1);
+    if (!text) return null;
 
-    return actors.find((actor) => actor.trim() !== "ChatDKG") || null;
+    const lines = text.split("\n").filter((line) => line.trim() !== "");
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i];
+        const match = line.match(/^([^:]+?)(?:\s*\(.*?\))?\s*:/);
+        if (match && match[1].trim() !== "ChatDKG") {
+            return match[1].trim();
+        }
+    }
+
+    return null;
 }
 
 function cleanRecentMessages(recentMessages) {
