@@ -26,7 +26,6 @@ let DkgClient: any = null;
 function cleanRecentMessages(recentMessages) {
     return recentMessages
         .split("\n")
-        .slice(-5) // Take last 5 messages
         .map((line) => line.replace(/\(.*?\) \[.*?\] .*?: /, ""))
         .join(" ")
         .trim();
@@ -83,7 +82,7 @@ export const dkgInsert: Action = {
         });
 
         let currentPost = String(state.currentPost);
-        let recentMessages = String(state.currentPost);
+        let recentMessages = cleanRecentMessages(String(state.recentMessages));
         elizaLogger.log(`recentMessages: ${recentMessages}`);
 
         if (currentPost === "undefined") {
