@@ -131,6 +131,14 @@ export const dkgInsert: Action = {
                     { paranetUAL: runtime.getSetting("DKG_PARANET_UAL") },
                 );
 
+                elizaLogger.log(
+                    `similarMemoriesQueryResult: ${JSON.stringify(
+                        similarMemoriesQueryResult,
+                        null,
+                        2,
+                    )}`,
+                );
+
                 if (
                     similarMemoriesQueryResult?.data &&
                     similarMemoriesQueryResult.data?.length
@@ -150,12 +158,12 @@ export const dkgInsert: Action = {
             }
 
             // Evaluate if post contains useful knowledge about OriginTrail ecosystem
-            const evaluationContext = `Evaluate if the following thread contains useful knowledge about OriginTrail, Decentralized Knowledge Graphs (DKG), AI, Knowledge Graphs, or blockchain technology.
+            const evaluationContext = `Evaluate if the following thread contains useful knowledge about OriginTrail, Decentralized Knowledge Graphs (DKG), AI, Knowledge Graphs, paranets, dRAG or blockchain technology.
 
         Only respond with 'true' or 'false' based on these criteria:
         - Must contain detailed technical explanations or comprehensive insights
         - Must be educational in nature with specific examples or use-cases
-        - Must be related to OriginTrail, DKGs, AI, Knowledge Graphs, or blockchain technology
+        - Must be related to OriginTrail, DKGs, AI, Knowledge Graphs, paranets, dRAG, blockchain technology and similar topics related to blockchain, AI and OriginTrail
         - Should be substantial enough to provide real value to the community
         - Do not reward obviously low-quality work, such as extremely short (one sentence), vague, or generic posts
         - If a post provides some useful knowledge but is not highly technical, lean towards 'true' rather than 'false' —avoid being overly strict
