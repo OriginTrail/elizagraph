@@ -276,3 +276,8 @@ export function extractSentimentAnalysisTopic(post: string) {
 Return the main financial topic which is to be extracted. Make sure to return only the financial topic and no other comments or remarks.
 `;
 }
+
+export const dkgCreateOptions = {
+    minimumNumberOfFinalizationConfirmations: 1,
+    minimumNumberOfNodeReplications: 1,
+};

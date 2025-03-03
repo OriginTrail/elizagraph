@@ -12,7 +12,7 @@ import {
     composeContext,
     generateText,
 } from "@elizaos/core";
-import { DKG_EXPLORER_LINKS } from "../constants.ts";
+import { DKG_EXPLORER_LINKS, dkgCreateOptions } from "../constants.ts";
 import { getSimilarMemoriesQuery } from "../constants.ts";
 import { createDKGMemoryTemplate } from "../templates.ts";
 // @ts-ignore
@@ -165,7 +165,7 @@ export const dkgInsert: Action = {
         - Must be related to OriginTrail, DKGs, AI, Knowledge Graphs, paranets, dRAG, blockchain technology and similar topics related to blockchain, AI and OriginTrail
         - Should be substantial enough to provide real value to the community
         - Do not reward obviously low-quality work, such as extremely short (one sentence), vague, or generic posts
-        - If a post provides some useful knowledge but is not highly technical, lean towards 'true' rather than 'false' —avoid being overly strict
+        - If a post provides some useful knowledge or ideas but is not highly technical or educational, lean towards 'true' rather than 'false' —avoid being overly strict
 
         Examples:
         "OriginTrail's v6 Knowledge Graph implements a unique consensus mechanism called proof-of-knowledge, which ensures data integrity across the network. This works by having multiple nodes validate and store the same data assets, creating a decentralized system of truth." -> true
@@ -326,7 +326,7 @@ export const dkgInsert: Action = {
                     {
                         public: memoryKnowledgeGraph,
                     },
-                    { epochsNum: 12 },
+                    { epochsNum: 12, ...dkgCreateOptions },
                 );
 
                 elizaLogger.log("======================== ASSET CREATED");
@@ -394,7 +394,7 @@ export const dkgInsert: Action = {
 
                     createAssetResult = await DkgClient.asset.create(
                         { public: JSON.parse(fixedJSON) },
-                        { epochsNum: 12 },
+                        { epochsNum: 12, ...dkgCreateOptions },
                     );
 
                     elizaLogger.log(
