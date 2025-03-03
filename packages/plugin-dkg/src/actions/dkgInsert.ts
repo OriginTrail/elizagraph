@@ -23,22 +23,6 @@ import { formatCookiesFromArray } from "../utils.ts";
 
 let DkgClient: any = null;
 
-function extractActor(text) {
-    if (!text) return null;
-
-    const lines = text.split("\n").filter((line) => line.trim() !== "");
-
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        const match = line.match(/^([^:]+?)(?:\s*\(.*?\))?\s*:/);
-        if (match && match[1].trim() !== "ChatDKG") {
-            return match[1].trim();
-        }
-    }
-
-    return null;
-}
-
 function cleanRecentMessages(recentMessages) {
     return recentMessages
         .split("\n")
@@ -98,14 +82,14 @@ export const dkgInsert: Action = {
         });
 
         let currentPost = message.content.text;
-        let recentMessages = cleanRecentMessages(String(state.recentMessages));
+        let recentMessages = String(state.currentPost);
         elizaLogger.log(`recentMessages: ${recentMessages}`);
 
         if (currentPost === "undefined") {
             currentPost = message?.content?.text;
         }
 
-        const telegramUser = extractActor(state.actors);
+        const telegramUser = state.senderName;
 
         // First check minimum content length before proceeding with LLM evaluation
         const MIN_CONTENT_LENGTH = 100; // Increased minimum length to ensure substantial content
