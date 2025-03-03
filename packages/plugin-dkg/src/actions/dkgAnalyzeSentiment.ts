@@ -20,6 +20,7 @@ import {
     getSentimentAnalysisQuery,
     DKG_EXPLORER_LINKS,
     extractSentimentAnalysisTopic,
+    dkgCreateOptions,
 } from "../constants";
 import { fetchFileFromUrl, getSentimentChart } from "../http-helper";
 import { formatCookiesFromArray } from "../utils.ts";
@@ -396,7 +397,7 @@ export const dkgAnalyzeSentiment: Action = {
             try {
                 createAssetResult = await DkgClient.asset.create(
                     { public: ka },
-                    { epochsNum: 12 },
+                    { epochsNum: 12, ...dkgCreateOptions },
                 );
             } catch (error) {
                 elizaLogger.error(
@@ -427,7 +428,7 @@ export const dkgAnalyzeSentiment: Action = {
                         // Retry asset creation with the fixed JSON
                         createAssetResult = await DkgClient.asset.create(
                             { public: JSON.parse(fixedJSON) },
-                            { epochsNum: 12 },
+                            { epochsNum: 12, ...dkgCreateOptions },
                         );
                     } catch (llmError) {
                         elizaLogger.error(
