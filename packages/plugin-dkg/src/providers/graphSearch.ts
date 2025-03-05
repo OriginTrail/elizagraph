@@ -17,6 +17,7 @@ import {
 // @ts-ignore
 import DKG from "dkg.js";
 import { DKGSelectQuerySchema, isDKGSelectQuery } from "../types.ts";
+import { searchData, getEmbedding } from "../milvus.ts";
 
 // Provider configuration
 const PROVIDER_CONFIG = {
@@ -173,14 +174,26 @@ export class DKGProvider {
         );
 
         // TODO: take 5 results instead of all based on similarity in the future
-        const result = queryOperationResult.data.map((entry: any) => {
+        const sparqlResult = queryOperationResult.data.map((entry: any) => {
             const formattedParts = Object.keys(entry).map(
                 (key) => `${key}: ${entry[key]}`,
             );
             return formattedParts.join(", ");
         });
 
-        return result.join("\n");
+        const embedding = await getEmbedding(userQuery);
+
+        const milvusResponse = await searchData("Elizagraph", embedding);
+
+        const milvusResult = (milvusResponse.results ?? []).map((r) => r.text);
+
+        elizaLogger.info(
+            `Got ${milvusResult.length} results from vector database`,
+        );
+
+        const combinedResults = [...sparqlResult, ...milvusResult];
+
+        return combinedResults.join("\n");
     }
 }
 

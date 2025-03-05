@@ -18,7 +18,7 @@ import { createDKGMemoryTemplate } from "../templates.ts";
 // @ts-ignore
 import DKG from "dkg.js";
 import { DKGMemorySchema, isDKGMemoryContent } from "../types.ts";
-import { formatCookiesFromArray } from "../utils.ts";
+import { insertData, getEmbedding } from "../milvus.ts";
 
 let DkgClient: any = null;
 
@@ -361,7 +361,25 @@ export const dkgInsert: Action = {
         }
 
         if (createAssetResult?.UAL && reviewContent) {
-            // add to vector database
+            getEmbedding(recentMessages)
+                .then((vector) => {
+                    insertData(
+                        [
+                            {
+                                text: recentMessages,
+                                vector,
+                                ual: createAssetResult.UAL,
+                            },
+                        ],
+                        "Elizagraph",
+                    ).catch((err) =>
+                        elizaLogger.error("Failed to insert vector data:", err),
+                    );
+                })
+                .catch((err) =>
+                    elizaLogger.error("Failed to get vector embedding:", err),
+                );
+
             callback({
                 text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${telegramUser}`,
             });
