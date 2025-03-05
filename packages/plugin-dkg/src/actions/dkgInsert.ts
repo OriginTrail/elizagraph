@@ -18,7 +18,6 @@ import { createDKGMemoryTemplate } from "../templates.ts";
 // @ts-ignore
 import DKG from "dkg.js";
 import { DKGMemorySchema, isDKGMemoryContent } from "../types.ts";
-import { Scraper } from "agent-twitter-client";
 import { formatCookiesFromArray } from "../utils.ts";
 
 let DkgClient: any = null;
@@ -227,59 +226,10 @@ export const dkgInsert: Action = {
             try {
                 elizaLogger.log("Publishing message to DKG");
 
-                // get info from twitter
-                const scraper = new Scraper();
-
-                const username = process.env.TWITTER_USERNAME;
-                const password = process.env.TWITTER_PASSWORD;
-                const email = process.env.TWITTER_EMAIL;
-                const twitter2faSecret = process.env.TWITTER_2FA_SECRET;
-                if (!username || !password) {
-                    elizaLogger.error(
-                        "Twitter credentials not configured in environment",
-                    );
-                    return false;
-                }
-                await scraper.login(
-                    username,
-                    password,
-                    email,
-                    twitter2faSecret,
-                );
-                if (!(await scraper.isLoggedIn())) {
-                    let attempts = 0;
-                    const maxAttempts = 10;
-
-                    while (attempts < maxAttempts) {
-                        attempts++;
-                        elizaLogger.warn(
-                            `Login attempt ${attempts} with cookies...`,
-                        );
-
-                        await scraper.setCookies(
-                            formatCookiesFromArray(
-                                JSON.parse(process.env.TWITTER_COOKIES),
-                            ),
-                        );
-
-                        if (await scraper.isLoggedIn()) {
-                            elizaLogger.info(
-                                "Successfully logged in with cookies.",
-                            );
-                            break;
-                        }
-
-                        if (attempts === maxAttempts) {
-                            elizaLogger.error(
-                                "Failed to login to Twitter after multiple attempts.",
-                            );
-                        }
-                    }
-                }
-
                 memoryKnowledgeGraph.author = {
                     "@type": "Person",
                     "@id": `https://t.me/${telegramUser}`,
+                    username: telegramUser,
                 };
 
                 elizaLogger.log(
