@@ -314,6 +314,7 @@ export const dkgInsert: Action = {
                     memoryKnowledgeGraph.author = {
                         "@type": "Person",
                         "@id": `https://twitter.com/${twitterUser}`,
+                        username: twitterUser,
                     };
                 }
                 // done getting info from twitter
