@@ -20,6 +20,7 @@ import DKG from "dkg.js";
 import { DKGMemorySchema, isDKGMemoryContent } from "../types.ts";
 import { Scraper } from "agent-twitter-client";
 import { formatCookiesFromArray } from "../utils.ts";
+import { insertData, getEmbedding } from "../milvus.ts";
 
 let DkgClient: any = null;
 
@@ -288,28 +289,38 @@ export const dkgInsert: Action = {
                     }
                 }
                 if (await scraper.isLoggedIn()) {
-                    const profile = await scraper.getProfile(twitterUser);
+                    try {
+                        const profile = await scraper.getProfile(twitterUser);
 
-                    elizaLogger.log("Profile:", profile);
+                        elizaLogger.log("Profile:", profile);
 
-                    const followersCount = profile.followersCount;
-                    const followingCount = profile.followingCount;
-                    const likesCount = profile.likesCount;
-                    const isBlueVerified = profile.isBlueVerified;
-                    const isVerified = profile.isVerified;
-                    const name = profile.name;
+                        const followersCount = profile.followersCount;
+                        const followingCount = profile.followingCount;
+                        const likesCount = profile.likesCount;
+                        const isBlueVerified = profile.isBlueVerified;
+                        const isVerified = profile.isVerified;
+                        const name = profile.name;
 
-                    memoryKnowledgeGraph.author = {
-                        "@type": "Person",
-                        "@id": `https://twitter.com/${twitterUser}`,
-                        name: name,
-                        username: twitterUser,
-                        followersCount: followersCount,
-                        followingCount: followingCount,
-                        likesCount: likesCount,
-                        isBlueVerified: isBlueVerified,
-                        isVerified: isVerified,
-                    };
+                        memoryKnowledgeGraph.author = {
+                            "@type": "Person",
+                            "@id": `https://twitter.com/${twitterUser}`,
+                            name: name,
+                            username: twitterUser,
+                            followersCount: followersCount,
+                            followingCount: followingCount,
+                            likesCount: likesCount,
+                            isBlueVerified: isBlueVerified,
+                            isVerified: isVerified,
+                        };
+                    } catch (error) {
+                        elizaLogger.error("Failed to get profile:", error);
+
+                        memoryKnowledgeGraph.author = {
+                            "@type": "Person",
+                            "@id": `https://twitter.com/${twitterUser}`,
+                            username: twitterUser,
+                        };
+                    }
                 } else {
                     memoryKnowledgeGraph.author = {
                         "@type": "Person",
@@ -449,6 +460,25 @@ export const dkgInsert: Action = {
 
         if (createAssetResult?.UAL && reviewContent) {
             // add to vector database
+            getEmbedding(recentMessages)
+                .then((vector) => {
+                    insertData(
+                        [
+                            {
+                                text: recentMessages,
+                                vector,
+                                ual: createAssetResult.UAL,
+                            },
+                        ],
+                        "Elizagraph",
+                    ).catch((err) =>
+                        elizaLogger.error("Failed to insert vector data:", err),
+                    );
+                })
+                .catch((err) =>
+                    elizaLogger.error("Failed to get vector embedding:", err),
+                );
+
             callback({
                 text: `Created a new memory and successfully added it to the paranet! Thank you for enhancing the OriginTrail educational knowledge base 🎉\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
             });
