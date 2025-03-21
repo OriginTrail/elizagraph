@@ -25,52 +25,6 @@ import { fetchFileFromUrl, getSentimentChart } from "../http-helper";
 
 let DkgClient: any = null;
 
-export async function postTweet(
-    content: string,
-    scraper: Scraper,
-    postId?: string,
-    media?: Buffer,
-): Promise<boolean> {
-    try {
-        elizaLogger.log("Attempting to send tweet:", content);
-
-        const result = await scraper.sendNoteTweet(content, postId, [
-            {
-                data: media,
-                mediaType: "image/png",
-            },
-        ]);
-
-        const body = await result.json();
-        elizaLogger.log("Tweet response:", body);
-
-        if (body.errors) {
-            const error = body.errors[0];
-            elizaLogger.error(
-                `Twitter API error (${error.code}): ${error.message}`,
-            );
-            return false;
-        }
-
-        if (!body?.data?.create_tweet?.tweet_results?.result) {
-            elizaLogger.error(
-                "Failed to post tweet: No tweet result in response",
-            );
-            return false;
-        }
-
-        return true;
-    } catch (error) {
-        elizaLogger.error("Error posting tweet:", {
-            message: error.message,
-            stack: error.stack,
-            name: error.name,
-            cause: error.cause,
-        });
-        return false;
-    }
-}
-
 function formatCookiesFromArray(cookiesArray: any[]) {
     const cookieStrings = cookiesArray.map(
         (cookie) =>
@@ -141,7 +95,7 @@ async function structureKA(
         );
     } catch (error) {
         console.error("Failed to fetch previous analyses:", error);
-        previousAnalyses = [];
+        previousAnalyses = { data: [] };
     }
 
     const allTweets: (Tweet & { vaderSentimentScore: number })[] =
@@ -186,7 +140,7 @@ async function structureKA(
               weightedAverageSentimentScore.totalImpressions
             : 0;
 
-    let relatedDatasets: any = [];
+    let relatedDatasets: any = { data: [] };
 
     try {
         const relatedDatasetsQuery = getRelatedDatasetsQuery(topic);
@@ -211,7 +165,7 @@ async function structureKA(
         variableMeasured: "VADER sentiment",
         observation: observations,
         about: topic,
-        relatedAnalysis: (relatedDatasets.data ?? []).map((rd) => ({
+        relatedAnalysis: (relatedDatasets?.data ?? []).map((rd) => ({
             isPartOf: rd.ual,
             "@id": rd.dataset,
         })),
@@ -270,29 +224,10 @@ export const dkgAnalyzeSentiment: Action = {
             nodeApiVersion: "/v1",
         });
 
-        const currentPost = String(state.currentPost);
+        const currentPost = _message.content.text;
         elizaLogger.log(`currentPost: ${currentPost}`);
 
-        const idRegex = /ID:\s(\d+)/;
-        let match = currentPost.match(idRegex);
-        let postId = "";
-        if (match && match[1]) {
-            postId = match[1];
-            elizaLogger.log(`Extracted ID: ${postId}`);
-        } else {
-            elizaLogger.log("No ID found.");
-        }
-
-        const userRegex = /From:.*\(@(\w+)\)/;
-        match = currentPost.match(userRegex);
-        let twitterUser = "";
-
-        if (match && match[1]) {
-            twitterUser = match[1];
-            elizaLogger.log(`Extracted user: @${twitterUser}`);
-        } else {
-            elizaLogger.log("No user mention found or invalid input.");
-        }
+        const telegramUser = state.senderName;
 
         const topic = await generateText({
             runtime,
@@ -344,11 +279,9 @@ export const dkgAnalyzeSentiment: Action = {
         }
 
         if (!topic || topic.toLowerCase() === "none") {
-            await postTweet(
-                `Didn't recognize a ticker of a financial asset in your post. Please post again while clearly stating which stock or cryptocurrency you want to analyze.`,
-                scraper,
-                postId,
-            );
+            await callback({
+                text: `Didn't recognize a ticker of a financial asset in your post. Please post again while clearly stating which stock or cryptocurrency you want to analyze.`,
+            });
 
             return true;
         }
@@ -378,7 +311,7 @@ export const dkgAnalyzeSentiment: Action = {
         const { ka, averageScore, numOfTotalTweets } = await structureKA(
             tweets,
             topic,
-            twitterUser,
+            telegramUser,
             {
                 dkgClient: DkgClient,
                 environment: runtime.getSetting("DKG_ENVIRONMENT"),
@@ -445,11 +378,9 @@ export const dkgAnalyzeSentiment: Action = {
 
             if (!createAssetResult?.UAL) {
                 elizaLogger.error("UAL not found after asset creation.");
-                await postTweet(
-                    `Apologies, something went wrong with the sentiment analysis.`,
-                    scraper,
-                    postId,
-                );
+                await callback({
+                    text: `Apologies, something went wrong with the sentiment analysis.`,
+                });
                 return true;
             }
 
@@ -457,8 +388,8 @@ export const dkgAnalyzeSentiment: Action = {
             elizaLogger.log(JSON.stringify(createAssetResult));
 
             // Proceed with posting sentiment analysis tweet
-            const sentimentData = await getSentimentChart(averageScore, topic);
-            const file = await fetchFileFromUrl(sentimentData.url);
+            // const sentimentData = await getSentimentChart(averageScore, topic);
+            // const file = await fetchFileFromUrl(sentimentData.url);
 
             let tweetContent = `${topic} sentiment based on top ${tweets.length} latest posts`;
             if (numOfTotalTweets - tweets.length > 0) {
@@ -474,21 +405,19 @@ export const dkgAnalyzeSentiment: Action = {
                     .join(", ") + "\n\n";
 
             tweetContent += `Analysis memorized on @origin_trail Decentralized Knowledge Graph `;
-            tweetContent += `${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}\n\n`;
+            tweetContent += `${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${telegramUser}\n\n`;
 
             tweetContent += `This is not financial advice.`;
 
-            await postTweet(tweetContent.trim(), scraper, postId, file.data);
+            await callback({ text: tweetContent });
         } catch (error) {
             elizaLogger.error(
                 "Unexpected error in sentiment analysis process:",
                 error.message,
             );
-            await postTweet(
-                `Apologies, something went wrong with the sentiment analysis.`,
-                scraper,
-                postId,
-            );
+            await callback({
+                text: `Apologies, something went wrong with the sentiment analysis.`,
+            });
         }
         return true;
     },

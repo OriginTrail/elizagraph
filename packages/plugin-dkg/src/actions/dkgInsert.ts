@@ -20,6 +20,14 @@ import { DKGMemorySchema, isDKGMemoryContent } from "../types.ts";
 
 let DkgClient: any = null;
 
+function cleanRecentMessages(recentMessages) {
+    return recentMessages
+        .split("\n")
+        .map((line) => line.replace(/\(.*?\) \[.*?\] .*?: /, ""))
+        .join(" ")
+        .trim();
+}
+
 export const dkgInsert: Action = {
     name: "INSERT_MEMORY_ACTION",
     similes: ["NO_ACTION", "NO_RESPONSE", "NO_REACTION", "NONE"], // we want to always run this action
@@ -73,16 +81,7 @@ export const dkgInsert: Action = {
         const currentPost = String(state.currentPost);
         elizaLogger.log(`currentPost: ${currentPost}`);
 
-        const userRegex = /From:.*\(@(\w+)\)/;
-        let match = currentPost.match(userRegex);
-        let twitterUser = "";
-
-        if (match && match[1]) {
-            twitterUser = match[1];
-            elizaLogger.log(`Extracted user: @${twitterUser}`);
-        } else {
-            elizaLogger.log("No user mention found or invalid input.");
-        }
+        const telegramUser = state.senderName;
 
         const createDKGMemoryContext = composeContext({
             state,
@@ -118,6 +117,12 @@ export const dkgInsert: Action = {
 
         try {
             elizaLogger.log("Publishing message to DKG");
+
+            memoryKnowledgeGraph.author = {
+                "@type": "Person",
+                "@id": `https://t.me/${telegramUser}`,
+                username: telegramUser,
+            };
 
             elizaLogger.log(
                 `KA: ${JSON.stringify(memoryKnowledgeGraph, null, 2)}`,
@@ -188,7 +193,7 @@ export const dkgInsert: Action = {
 
         if (createAssetResult.UAL) {
             callback({
-                text: `Created a new memory!\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
+                text: `Created a new memory!\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${telegramUser}`,
             });
         } else {
             callback({
