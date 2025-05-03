@@ -31,6 +31,7 @@ export const dkgInsert: Action = {
             "DKG_BLOCKCHAIN_NAME",
             "DKG_PUBLIC_KEY",
             "DKG_PRIVATE_KEY",
+            "DKG_PARANET_UAL",
         ];
 
         const missingVars = requiredEnvVars.filter(
@@ -127,11 +128,28 @@ export const dkgInsert: Action = {
                 {
                     public: memoryKnowledgeGraph,
                 },
-                { epochsNum: 12 },
+                {
+                    epochsNum: 1
+                },
             );
 
             elizaLogger.log("======================== ASSET CREATED");
             elizaLogger.log(JSON.stringify(createAssetResult));
+
+            // Submit the asset to the Paranet if DKG_PARANET_UAL is set
+            if (runtime.getSetting("DKG_PARANET_UAL")) {
+                try {
+                    const submitToParanetResult = await DkgClient.asset.submitToParanet(
+                        createAssetResult.UAL,
+                        runtime.getSetting("DKG_PARANET_UAL"),
+                    );
+                    elizaLogger.log("======================== ASSET SUBMITTED TO PARANET");
+                    elizaLogger.log(JSON.stringify(submitToParanetResult, null, 2));
+                } catch (submitError) {
+                    elizaLogger.error("Failed to submit asset to Paranet:", submitError.message);
+                }
+            }
+
         } catch (error) {
             elizaLogger.error(
                 "Error occurred while publishing message to DKG:",
@@ -170,13 +188,30 @@ export const dkgInsert: Action = {
 
                     createAssetResult = await DkgClient.asset.create(
                         { public: JSON.parse(fixedJSON) },
-                        { epochsNum: 12 },
+                        {
+                            epochsNum: 1
+                        },
                     );
 
                     elizaLogger.log(
                         "======================== ASSET CREATED AFTER FIX",
                     );
                     elizaLogger.log(JSON.stringify(createAssetResult));
+
+                    // Stage the asset to the Paranet after fixing JSON
+                    if (runtime.getSetting("DKG_PARANET_UAL")) {
+                        try {
+                            const stageToParanetResult = await DkgClient.paranet.stageKnowledgeCollection(
+                                createAssetResult.UAL,
+                                runtime.getSetting("DKG_PARANET_UAL"),
+                            );
+                            elizaLogger.log("======================== ASSET STAGED TO PARANET AFTER FIX");
+                            elizaLogger.log(JSON.stringify(stageToParanetResult, null, 2));
+                        } catch (submitError) {
+                            elizaLogger.error("Failed to stage asset to Paranet after fix:", submitError.message);
+                        }
+                    }
+
                 } catch (llmError) {
                     elizaLogger.error(
                         "Failed to fix JSON using LLM:",
@@ -186,13 +221,9 @@ export const dkgInsert: Action = {
             }
         }
 
-        if (createAssetResult.UAL) {
+        if (createAssetResult?.UAL) {
             callback({
-                text: `Created a new memory!\n\nRead my mind on @origin_trail Decentralized Knowledge Graph ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL} @${twitterUser}`,
-            });
-        } else {
-            callback({
-                text: `Apologies, something went wrong with creating the memory.`,
+                text: `👾 $DKG Swarm memory updated 👾\n\n👉 Read my mind ${DKG_EXPLORER_LINKS[runtime.getSetting("DKG_ENVIRONMENT")]}${createAssetResult.UAL}`,
             });
         }
 
