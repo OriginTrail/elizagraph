@@ -5,7 +5,7 @@ import {
 } from "@elizaos/core";
 import { z, ZodError } from "zod";
 
-export const DEFAULT_MAX_TWEET_LENGTH = process.env.MAX_TWEET_LENGTH || 3500;
+export const DEFAULT_MAX_TWEET_LENGTH = parseInt(process.env.MAX_TWEET_LENGTH || '3500', 10);
 
 const twitterUsernameSchema = z
     .string()
@@ -29,8 +29,14 @@ const twitterUsernameSchema = z
 export const twitterEnvSchema = z.object({
     TWITTER_DRY_RUN: z.boolean(),
     TWITTER_USERNAME: z.string().min(1, "X/Twitter username is required"),
-    TWITTER_PASSWORD: z.string().min(1, "X/Twitter password is required"),
-    TWITTER_EMAIL: z.string().email("Valid X/Twitter email is required"),
+    // OAuth 1.0a credentials (required for Twitter API v2)
+    TWITTER_API_KEY: z.string().optional(),
+    TWITTER_API_SECRET: z.string().optional(),
+    TWITTER_ACCESS_TOKEN: z.string().optional(),
+    TWITTER_ACCESS_SECRET: z.string().optional(),
+    // Legacy credentials (deprecated - Twitter removed guest token support)
+    TWITTER_PASSWORD: z.string().optional(),
+    TWITTER_EMAIL: z.string().optional(),
     MAX_TWEET_LENGTH: z.number().int().default(DEFAULT_MAX_TWEET_LENGTH),
     TWITTER_SEARCH_ENABLE: z.boolean().default(false),
     TWITTER_2FA_SECRET: z.string(),
@@ -126,13 +132,37 @@ export async function validateTwitterConfig(
                 runtime.getSetting("TWITTER_USERNAME") ||
                 process.env.TWITTER_USERNAME,
 
+            // OAuth 1.0a credentials (Twitter API v2)
+            TWITTER_API_KEY:
+                runtime.getSetting("TWITTER_API_KEY") ||
+                process.env.TWITTER_API_KEY ||
+                "",
+
+            TWITTER_API_SECRET:
+                runtime.getSetting("TWITTER_API_SECRET") ||
+                process.env.TWITTER_API_SECRET ||
+                "",
+
+            TWITTER_ACCESS_TOKEN:
+                runtime.getSetting("TWITTER_ACCESS_TOKEN") ||
+                process.env.TWITTER_ACCESS_TOKEN ||
+                "",
+
+            TWITTER_ACCESS_SECRET:
+                runtime.getSetting("TWITTER_ACCESS_SECRET") ||
+                process.env.TWITTER_ACCESS_SECRET ||
+                "",
+
+            // Legacy credentials (deprecated)
             TWITTER_PASSWORD:
                 runtime.getSetting("TWITTER_PASSWORD") ||
-                process.env.TWITTER_PASSWORD,
+                process.env.TWITTER_PASSWORD ||
+                "",
 
             TWITTER_EMAIL:
                 runtime.getSetting("TWITTER_EMAIL") ||
-                process.env.TWITTER_EMAIL,
+                process.env.TWITTER_EMAIL ||
+                "",
 
             // number as string?
             MAX_TWEET_LENGTH: safeParseInt(
@@ -164,7 +194,7 @@ export async function validateTwitterConfig(
             TWITTER_POLL_INTERVAL: safeParseInt(
                 runtime.getSetting("TWITTER_POLL_INTERVAL") ||
                     process.env.TWITTER_POLL_INTERVAL,
-                120, // 2m
+                90 // 1.5m
             ),
 
             // comma separated string

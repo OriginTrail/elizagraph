@@ -120,14 +120,15 @@ export class TwitterInteractionClient {
 
         const twitterUsername = this.client.profile.username;
         try {
-            // Check for mentions
-            const mentionCandidates = (
-                await this.client.fetchSearchTweets(
-                    `@${twitterUsername}`,
-                    20,
-                    SearchMode.Latest,
-                )
-            ).tweets;
+            // Check for mentions using Twitter API v2
+            const lastTweetId = this.client.lastCheckedTweetId
+                ? this.client.lastCheckedTweetId.toString()
+                : undefined;
+
+            const mentionCandidates = await this.client.fetchMentions(
+                20,  // Fetch up to 20 mentions
+                lastTweetId
+            );
 
             elizaLogger.log(
                 "Completed checking mentioned tweets:",
@@ -148,6 +149,13 @@ export class TwitterInteractionClient {
                     // Fetch tweets from all target users
                     for (const username of TARGET_USERS) {
                         try {
+                            // TODO: Replace with Twitter API v2 search
+                            // For now, skip fetching from target users as the old library method is broken
+                            elizaLogger.warn(`Skipping tweets from @${username} - Twitter API v2 search not yet implemented for target users`);
+                            continue;
+
+                            /*
+                            // This code is temporarily disabled until Twitter API v2 search is implemented
                             const userTweets = (
                                 await this.client.twitterClient.fetchSearchTweets(
                                     `from:${username}`,
@@ -187,6 +195,7 @@ export class TwitterInteractionClient {
                                     `Found ${validTweets.length} valid tweets from ${username}`,
                                 );
                             }
+                            */
                         } catch (error) {
                             elizaLogger.error(
                                 `Error fetching tweets for ${username}:`,

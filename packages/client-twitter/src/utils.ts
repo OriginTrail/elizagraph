@@ -236,37 +236,45 @@ export async function sendTweet(
 
         const cleanChunk = deduplicateMentions(chunk.trim());
 
-        const result = await client.requestQueue.add(async () =>
-            isLongTweet
-                ? client.twitterClient.sendLongTweet(
-                      cleanChunk,
-                      previousTweetId,
-                      mediaData,
-                  )
-                : client.twitterClient.sendTweet(
-                      cleanChunk,
-                      previousTweetId,
-                      mediaData,
-                  ),
-        );
+        // Use Twitter API v2 for posting
+        if (!client.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
 
-        const body = await result.json();
-        const tweetResult = isLongTweet
-            ? body?.data?.notetweet_create?.tweet_results?.result
-            : body?.data?.create_tweet?.tweet_results?.result;
+        const result = await client.requestQueue.add(async () => {
+            // Build tweet payload
+            const tweetPayload: any = {
+                text: cleanChunk
+            };
+
+            // Add reply if this is part of a thread
+            if (previousTweetId) {
+                tweetPayload.reply = {
+                    in_reply_to_tweet_id: previousTweetId
+                };
+            }
+
+            // TODO: Add media support with twitter-api-v2
+            // For now, post without media
+            if (mediaData && mediaData.length > 0) {
+                elizaLogger.warn("Media attachments are not yet supported with twitter-api-v2. Posting text only.");
+            }
+
+            // Post the tweet
+            return await client.v2Client.v2.tweet(tweetPayload);
+        });
 
         // if we have a response
-        if (tweetResult) {
-            // Parse the response
+        if (result && result.data) {
+            // Parse the response from twitter-api-v2
             const finalTweet: Tweet = {
-                id: tweetResult.rest_id,
-                text: tweetResult.legacy.full_text,
-                conversationId: tweetResult.legacy.conversation_id_str,
-                timestamp:
-                    new Date(tweetResult.legacy.created_at).getTime() / 1000,
-                userId: tweetResult.legacy.user_id_str,
-                inReplyToStatusId: tweetResult.legacy.in_reply_to_status_id_str,
-                permanentUrl: `https://twitter.com/${twitterUsername}/status/${tweetResult.rest_id}`,
+                id: result.data.id,
+                text: result.data.text,
+                conversationId: result.data.conversation_id || result.data.id,
+                timestamp: new Date().getTime() / 1000,
+                userId: client.profile?.id || '',
+                inReplyToStatusId: previousTweetId || undefined,
+                permanentUrl: `https://twitter.com/${twitterUsername}/status/${result.data.id}`,
                 hashtags: [],
                 mentions: [],
                 photos: [],
@@ -279,7 +287,7 @@ export async function sendTweet(
         } else {
             elizaLogger.error("Error sending tweet chunk:", {
                 chunk,
-                response: body,
+                result,
             });
         }
 
