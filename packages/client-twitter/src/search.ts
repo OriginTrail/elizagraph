@@ -219,9 +219,7 @@ export class TwitterSearchClient {
 
             let tweetBackground = "";
             if (selectedTweet.isRetweet) {
-                const originalTweet = await this.client.requestQueue.add(() =>
-                    this.client.twitterClient.getTweet(selectedTweet.id)
-                );
+                const originalTweet = await this.client.getTweet(selectedTweet.id);
                 tweetBackground = `Retweeting @${originalTweet.username}: ${originalTweet.text}`;
             }
 

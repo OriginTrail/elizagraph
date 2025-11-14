@@ -370,30 +370,14 @@ export class TwitterPostClient {
         content: string,
         tweetId?: string,
     ) {
-        try {
-            const noteTweetResult = await client.requestQueue.add(
-                async () =>
-                    await client.twitterClient.sendNoteTweet(content, tweetId),
-            );
-
-            if (noteTweetResult.errors && noteTweetResult.errors.length > 0) {
-                // Note Tweet failed due to authorization. Falling back to standard Tweet.
-                const truncateContent = truncateToCompleteSentence(
-                    content,
-                    this.client.twitterConfig.MAX_TWEET_LENGTH,
-                );
-                return await this.sendStandardTweet(
-                    client,
-                    truncateContent,
-                    tweetId,
-                );
-            } else {
-                return noteTweetResult.data.notetweet_create.tweet_results
-                    .result;
-            }
-        } catch (error) {
-            throw new Error(`Note Tweet failed: ${error}`);
-        }
+        // Note: Twitter API v2 doesn't support Note Tweets (long tweets) directly
+        // Fallback to standard tweet with truncation
+        elizaLogger.warn("Note tweets not supported with OAuth v2, truncating content");
+        const truncateContent = truncateToCompleteSentence(
+            content,
+            this.client.twitterConfig.MAX_TWEET_LENGTH,
+        );
+        return await this.sendStandardTweet(client, truncateContent, tweetId);
     }
 
     async sendStandardTweet(
@@ -402,16 +386,9 @@ export class TwitterPostClient {
         tweetId?: string,
     ) {
         try {
-            const standardTweetResult = await client.requestQueue.add(
-                async () =>
-                    await client.twitterClient.sendTweet(content, tweetId),
-            );
-            const body = await standardTweetResult.json();
-            if (!body?.data?.create_tweet?.tweet_results?.result) {
-                console.error("Error sending tweet; Bad response:", body);
-                return;
-            }
-            return body.data.create_tweet.tweet_results.result;
+            // Use OAuth v2 sendStandardTweet from base client
+            const result = await client.sendStandardTweet(content, tweetId);
+            return result;
         } catch (error) {
             elizaLogger.error("Error sending standard Tweet:", error);
             throw error;
@@ -833,7 +810,7 @@ export class TwitterPostClient {
                         executedActions.push("like (dry run)");
                     } else {
                         try {
-                            await this.client.twitterClient.likeTweet(tweet.id);
+                            await this.client.likeTweet(tweet.id);
                             executedActions.push("like");
                             elizaLogger.log(`Liked tweet ${tweet.id}`);
                         } catch (error) {
@@ -853,7 +830,7 @@ export class TwitterPostClient {
                         executedActions.push("retweet (dry run)");
                     } else {
                         try {
-                            await this.client.twitterClient.retweet(tweet.id);
+                            await this.client.retweet(tweet.id);
                             executedActions.push("retweet");
                             elizaLogger.log(`Retweeted tweet ${tweet.id}`);
                         } catch (error) {
@@ -900,7 +877,7 @@ export class TwitterPostClient {
                         if (tweet.quotedStatusId) {
                             try {
                                 const quotedTweet =
-                                    await this.client.twitterClient.getTweet(
+                                    await this.client.getTweet(
                                         tweet.quotedStatusId,
                                     );
                                 if (quotedTweet) {
@@ -969,22 +946,16 @@ export class TwitterPostClient {
                             );
                             executedActions.push("quote (dry run)");
                         } else {
-                            // Send the tweet through request queue
-                            const result = await this.client.requestQueue.add(
-                                async () =>
-                                    await this.client.twitterClient.sendQuoteTweet(
-                                        quoteContent,
-                                        tweet.id,
-                                    ),
+                            // Send the tweet using OAuth v2
+                            const result = await this.client.sendQuoteTweet(
+                                quoteContent,
+                                tweet.id
                             );
 
-                            const body = await result.json();
-
-                            if (
-                                body?.data?.create_tweet?.tweet_results?.result
-                            ) {
+                            if (result && result.id) {
                                 elizaLogger.log(
-                                    "Successfully posted quote tweet",
+                                    "Successfully posted quote tweet:",
+                                    result.id
                                 );
                                 executedActions.push("quote");
 
@@ -996,7 +967,7 @@ export class TwitterPostClient {
                             } else {
                                 elizaLogger.error(
                                     "Quote tweet creation failed:",
-                                    body,
+                                    result,
                                 );
                             }
                         }
@@ -1116,7 +1087,7 @@ export class TwitterPostClient {
             if (tweet.quotedStatusId) {
                 try {
                     const quotedTweet =
-                        await this.client.twitterClient.getTweet(
+                        await this.client.getTweet(
                             tweet.quotedStatusId,
                         );
                     if (quotedTweet) {

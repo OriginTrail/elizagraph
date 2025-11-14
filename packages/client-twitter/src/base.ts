@@ -167,6 +167,85 @@ export class ClientBase extends EventEmitter {
         return tweet;
     }
 
+    async likeTweet(tweetId: string): Promise<void> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            await this.v2Client.v2.like(this.profile.id, tweetId);
+            elizaLogger.log(`Liked tweet ${tweetId}`);
+        } catch (error) {
+            elizaLogger.error(`Error liking tweet ${tweetId}:`, error);
+            throw error;
+        }
+    }
+
+    async retweet(tweetId: string): Promise<void> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            await this.v2Client.v2.retweet(this.profile.id, tweetId);
+            elizaLogger.log(`Retweeted tweet ${tweetId}`);
+        } catch (error) {
+            elizaLogger.error(`Error retweeting tweet ${tweetId}:`, error);
+            throw error;
+        }
+    }
+
+    async sendStandardTweet(content: string, replyToTweetId?: string): Promise<any> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            const tweetPayload: any = {
+                text: content
+            };
+
+            if (replyToTweetId) {
+                tweetPayload.reply = {
+                    in_reply_to_tweet_id: replyToTweetId
+                };
+            }
+
+            const result = await this.requestQueue.add(async () => 
+                await this.v2Client.v2.tweet(tweetPayload)
+            );
+
+            elizaLogger.log(`Sent standard tweet: ${result.data.id}`);
+            return result.data;
+        } catch (error) {
+            elizaLogger.error("Error sending standard tweet:", error);
+            throw error;
+        }
+    }
+
+    async sendQuoteTweet(content: string, quotedTweetId: string): Promise<any> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            const tweetPayload: any = {
+                text: content,
+                quote_tweet_id: quotedTweetId
+            };
+
+            const result = await this.requestQueue.add(async () => 
+                await this.v2Client.v2.tweet(tweetPayload)
+            );
+
+            elizaLogger.log(`Sent quote tweet: ${result.data.id}`);
+            return result.data;
+        } catch (error) {
+            elizaLogger.error("Error sending quote tweet:", error);
+            throw error;
+        }
+    }
+
     callback: (self: ClientBase) => any = null;
 
     onReady() {
@@ -314,7 +393,7 @@ export class ClientBase extends EventEmitter {
 
     async fetchOwnPosts(count: number): Promise<Tweet[]> {
         elizaLogger.debug("fetching own posts with OAuth v2");
-        
+
         if (!this.v2Client || !this.profile?.id) {
             throw new Error("Twitter API v2 client or profile not initialized");
         }
@@ -328,7 +407,7 @@ export class ClientBase extends EventEmitter {
             });
 
             const tweets: Tweet[] = [];
-            
+
             for await (const tweet of userTweets) {
                 tweets.push({
                     id: tweet.id,
@@ -365,7 +444,7 @@ export class ClientBase extends EventEmitter {
         following?: boolean
     ): Promise<Tweet[]> {
         elizaLogger.debug("fetching home timeline with OAuth v2");
-        
+
         if (!this.v2Client) {
             throw new Error("Twitter API v2 client not initialized");
         }
@@ -380,10 +459,10 @@ export class ClientBase extends EventEmitter {
             });
 
             const tweets: Tweet[] = [];
-            
+
             for await (const tweet of timeline) {
                 const author = timeline.includes.users?.find(u => u.id === tweet.author_id);
-                
+
                 tweets.push({
                     id: tweet.id,
                     text: tweet.text,
@@ -431,7 +510,7 @@ export class ClientBase extends EventEmitter {
         cursor?: string
     ): Promise<QueryTweetsResponse> {
         elizaLogger.debug(`Searching tweets with OAuth v2: "${query}"`);
-        
+
         if (!this.v2Client) {
             throw new Error("Twitter API v2 client not initialized");
         }
@@ -454,7 +533,7 @@ export class ClientBase extends EventEmitter {
 
             for await (const tweet of searchResults) {
                 const author = searchResults.includes.users?.find(u => u.id === tweet.author_id);
-                
+
                 tweets.push({
                     id: tweet.id,
                     text: tweet.text,
@@ -479,7 +558,7 @@ export class ClientBase extends EventEmitter {
             }
 
             elizaLogger.debug(`Found ${tweets.length} tweets for query: "${query}"`);
-            
+
             return {
                 tweets,
                 next: searchResults.meta.next_token
