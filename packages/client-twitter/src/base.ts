@@ -88,6 +88,7 @@ export class ClientBase extends EventEmitter {
     static _twitterClients: { [accountIdentifier: string]: Scraper } = {};
     twitterClient: Scraper;
     v2Client: TwitterApi | null = null; // Twitter API v2 client for OAuth operations
+    isInitialized: boolean = false; // Flag to prevent double initialization
     runtime: IAgentRuntime;
     twitterConfig: TwitterConfig;
     directions: string;
@@ -123,9 +124,44 @@ export class ClientBase extends EventEmitter {
             return cachedTweet;
         }
 
-        const tweet = await this.requestQueue.add(() =>
-            this.twitterClient.getTweet(tweetId)
-        );
+        // Use Twitter API v2 instead of the old Scraper (which uses guest tokens)
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        const tweet = await this.requestQueue.add(async () => {
+            const tweetData = await this.v2Client.v2.singleTweet(tweetId, {
+                'tweet.fields': ['created_at', 'author_id', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets'],
+                'user.fields': ['username', 'name'],
+                expansions: ['author_id']
+            });
+
+            if (!tweetData.data) {
+                throw new Error(`Tweet ${tweetId} not found`);
+            }
+
+            const t = tweetData.data;
+            const author = tweetData.includes?.users?.[0];
+
+            // Convert v2 format to our Tweet format
+            return {
+                id: t.id,
+                text: t.text || '',
+                conversationId: t.conversation_id || t.id,
+                timestamp: t.created_at ? new Date(t.created_at).getTime() / 1000 : Date.now() / 1000,
+                userId: t.author_id || '',
+                username: author?.username || '',
+                name: author?.name || '',
+                inReplyToStatusId: t.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
+                permanentUrl: `https://twitter.com/${author?.username}/status/${t.id}`,
+                hashtags: [],
+                mentions: [],
+                photos: [],
+                thread: [],
+                urls: [],
+                videos: []
+            } as Tweet;
+        });
 
         await this.cacheTweet(tweet);
         return tweet;
@@ -203,16 +239,22 @@ export class ClientBase extends EventEmitter {
                 return false;
             }
         } catch (error) {
-            elizaLogger.error("Twitter OAuth authentication error:", {
+            elizaLogger.error("Twitter OAuth authentication failed:", {
                 message: error.message,
                 code: error.code,
-                details: error
+                rateLimit: error.rateLimit
             });
             return false;
         }
     }
 
     async init() {
+        // Prevent double initialization
+        if (this.isInitialized) {
+            elizaLogger.debug("Twitter client already initialized, skipping...");
+            return;
+        }
+
         elizaLogger.info("Initializing Twitter client...");
 
         const success = await this.initializeV2Client();
@@ -228,6 +270,7 @@ export class ClientBase extends EventEmitter {
             );
         }
 
+        this.isInitialized = true;
         elizaLogger.success("✅ Twitter client initialized successfully!");
     }
 
@@ -254,7 +297,10 @@ export class ClientBase extends EventEmitter {
         }
 
         await this.loadLatestCheckedTweetId();
-        await this.populateTimeline();
+        
+        // Skip populateTimeline when using OAuth - timeline will be populated
+        // naturally as the bot processes mentions and interactions
+        // await this.populateTimeline();
     }
 
     async clearCachedCookies(username: string) {
