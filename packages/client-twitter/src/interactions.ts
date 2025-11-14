@@ -149,20 +149,13 @@ export class TwitterInteractionClient {
                     // Fetch tweets from all target users
                     for (const username of TARGET_USERS) {
                         try {
-                            // TODO: Replace with Twitter API v2 search
-                            // For now, skip fetching from target users as the old library method is broken
-                            elizaLogger.warn(`Skipping tweets from @${username} - Twitter API v2 search not yet implemented for target users`);
-                            continue;
-
-                            /*
-                            // This code is temporarily disabled until Twitter API v2 search is implemented
-                            const userTweets = (
-                                await this.client.twitterClient.fetchSearchTweets(
-                                    `from:${username}`,
-                                    3,
-                                    SearchMode.Latest,
-                                )
-                            ).tweets;
+                            // Fetch tweets from target user using OAuth v2 search
+                            const searchResults = await this.client.fetchSearchTweets(
+                                `from:${username}`,
+                                3,
+                                SearchMode.Latest
+                            );
+                            const userTweets = searchResults.tweets;
 
                             // Filter for unprocessed, non-reply, recent tweets
                             const validTweets = userTweets.filter((tweet) => {
@@ -195,7 +188,6 @@ export class TwitterInteractionClient {
                                     `Found ${validTweets.length} valid tweets from ${username}`,
                                 );
                             }
-                            */
                         } catch (error) {
                             elizaLogger.error(
                                 `Error fetching tweets for ${username}:`,

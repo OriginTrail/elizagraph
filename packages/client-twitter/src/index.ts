@@ -60,15 +60,13 @@ export const TwitterClientInterface: Client = {
         // Initialize login/session
         await manager.client.init();
 
-        // Start the posting loop (DISABLED: uses guest tokens for timeline fetching)
-        // TODO: Re-enable after implementing Twitter API v2 timeline endpoints
-        // await manager.post.start();
+        // Start the posting loop (now uses OAuth v2 API)
+        await manager.post.start();
 
-        // Start the search logic if it exists (DISABLED: uses guest tokens)
-        // TODO: Re-enable after implementing Twitter API v2 search endpoints
-        // if (manager.search) {
-        //     await manager.search.start();
-        // }
+        // Start the search logic if it exists (now uses OAuth v2 API)
+        if (manager.search) {
+            await manager.search.start();
+        }
 
         // Start interactions (mentions, replies)
         await manager.interaction.start();
