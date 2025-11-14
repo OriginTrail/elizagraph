@@ -614,7 +614,7 @@ export class TwitterInteractionClient {
                     createdAt: currentTweet.timestamp * 1000,
                     roomId,
                     userId:
-                        currentTweet.userId === this.twitterUserId
+                        currentTweet.userId === this.client.profile.id
                             ? this.runtime.agentId
                             : stringToUuid(currentTweet.userId),
                     embedding: getEmbeddingZeroVector(),
@@ -635,7 +635,7 @@ export class TwitterInteractionClient {
                     currentTweet.inReplyToStatusId,
                 );
                 try {
-                    const parentTweet = await this.twitterClient.getTweet(
+                    const parentTweet = await this.client.getTweet(
                         currentTweet.inReplyToStatusId,
                     );
 
