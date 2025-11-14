@@ -194,7 +194,7 @@ export async function validateTwitterConfig(
             TWITTER_POLL_INTERVAL: safeParseInt(
                 runtime.getSetting("TWITTER_POLL_INTERVAL") ||
                     process.env.TWITTER_POLL_INTERVAL,
-                90 // 1.5m
+                120 // 2m
             ),
 
             // comma separated string
