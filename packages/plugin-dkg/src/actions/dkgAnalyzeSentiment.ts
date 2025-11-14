@@ -13,7 +13,6 @@ import {
 } from "@elizaos/core";
 // @ts-ignore
 import DKG from "dkg.js";
-import { Scraper, Tweet, SearchMode } from "agent-twitter-client";
 import vader from "vader-sentiment";
 import {
     getRelatedDatasetsQuery,
@@ -25,62 +24,38 @@ import { fetchFileFromUrl, getSentimentChart } from "../http-helper";
 
 let DkgClient: any = null;
 
-export async function postTweet(
-    content: string,
-    scraper: Scraper,
-    postId?: string,
-    media?: Buffer,
-): Promise<boolean> {
-    try {
-        elizaLogger.log("Attempting to send tweet:", content);
-
-        const result = await scraper.sendNoteTweet(content, postId, [
-            {
-                data: media,
-                mediaType: "image/png",
-            },
-        ]);
-
-        const body = await result.json();
-        elizaLogger.log("Tweet response:", body);
-
-        if (body.errors) {
-            const error = body.errors[0];
-            elizaLogger.error(
-                `Twitter API error (${error.code}): ${error.message}`,
-            );
-            return false;
-        }
-
-        if (!body?.data?.create_tweet?.tweet_results?.result) {
-            elizaLogger.error(
-                "Failed to post tweet: No tweet result in response",
-            );
-            return false;
-        }
-
-        return true;
-    } catch (error) {
-        elizaLogger.error("Error posting tweet:", {
-            message: error.message,
-            stack: error.stack,
-            name: error.name,
-            cause: error.cause,
-        });
-        return false;
+// Helper to get Twitter client from runtime
+function getTwitterClient(runtime: IAgentRuntime): any {
+    // Access the Twitter client from the runtime's clients
+    const twitterClient = (runtime as any).clients?.find(
+        (client: any) => client.constructor.name === "TwitterClientInterface"
+    );
+    
+    if (!twitterClient) {
+        throw new Error("Twitter client not found in runtime");
     }
+    
+    return twitterClient;
 }
 
-function formatCookiesFromArray(cookiesArray: any[]) {
-    const cookieStrings = cookiesArray.map(
-        (cookie) =>
-            `${cookie.key}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}; ${
-                cookie.secure ? "Secure" : ""
-            }; ${cookie.httpOnly ? "HttpOnly" : ""}; SameSite=${
-                cookie.sameSite || "Lax"
-            }`,
-    );
-    return cookieStrings;
+// Helper to convert v2 API tweet format to legacy format for sentiment analysis
+function convertTweetFormat(v2Tweet: any): any {
+    return {
+        id: v2Tweet.id,
+        text: v2Tweet.text || '',
+        username: v2Tweet.username || '',
+        name: v2Tweet.name || '',
+        userId: v2Tweet.userId || '',
+        timestamp: v2Tweet.timestamp || Date.now() / 1000,
+        permanentUrl: v2Tweet.permanentUrl || '',
+        conversationId: v2Tweet.conversationId || v2Tweet.id,
+        inReplyToStatusId: v2Tweet.inReplyToStatusId,
+        hashtags: v2Tweet.hashtags || [],
+        mentions: v2Tweet.mentions || [],
+        photos: v2Tweet.photos || [],
+        urls: v2Tweet.urls || [],
+        videos: v2Tweet.videos || []
+    };
 }
 
 function calculateVaderScore(statement) {
@@ -302,68 +277,48 @@ export const dkgAnalyzeSentiment: Action = {
 
         elizaLogger.log(`Extracted topic to analyze sentiment: ${topic}`);
 
-        const scraper = new Scraper();
-
-        const username = process.env.TWITTER_USERNAME;
-        const password = process.env.TWITTER_PASSWORD;
-        const email = process.env.TWITTER_EMAIL;
-        const twitter2faSecret = process.env.TWITTER_2FA_SECRET;
-        if (!username || !password) {
-            elizaLogger.error(
-                "Twitter credentials not configured in environment",
-            );
+        // Get the Twitter client from runtime (uses OAuth v2)
+        let twitterClient;
+        try {
+            twitterClient = getTwitterClient(runtime);
+        } catch (error) {
+            elizaLogger.error("Failed to get Twitter client:", error);
+            callback?.({
+                text: "I'm having trouble accessing Twitter right now. Please try again later.",
+                action: "NONE"
+            });
             return false;
-        }
-        await scraper.login(username, password, email, twitter2faSecret);
-        if (!(await scraper.isLoggedIn())) {
-            let attempts = 0;
-            const maxAttempts = 10;
-
-            while (attempts < maxAttempts) {
-                attempts++;
-                elizaLogger.warn(`Login attempt ${attempts} with cookies...`);
-
-                await scraper.setCookies(
-                    formatCookiesFromArray(
-                        JSON.parse(process.env.TWITTER_COOKIES),
-                    ),
-                );
-
-                if (await scraper.isLoggedIn()) {
-                    elizaLogger.info("Successfully logged in with cookies.");
-                    break;
-                }
-
-                if (attempts === maxAttempts) {
-                    elizaLogger.error(
-                        "Failed to login to Twitter after multiple attempts.",
-                    );
-                    return false;
-                }
-            }
         }
 
         if (!topic || topic.toLowerCase() === "none") {
-            await postTweet(
-                `Didn't recognize a ticker of a financial asset in your post. Please post again while clearly stating which stock or cryptocurrency you want to analyze.`,
-                scraper,
-                postId,
-            );
-
+            callback?.({
+                text: `Didn't recognize a ticker of a financial asset in your post. Please post again while clearly stating which stock or cryptocurrency you want to analyze.`,
+                action: "REPLY"
+            });
             return true;
         }
 
-        const scrapedTweets = scraper.searchTweets(
-            topic,
-            100, // bump to higher number?
-            SearchMode.Latest,
-        );
-
-        let tweets = [];
-
-        for await (const tweet of scrapedTweets) {
-            tweets.push(tweet);
+        // Use OAuth v2 search (already implemented in client-twitter)
+        elizaLogger.log(`Searching for tweets about: ${topic}`);
+        
+        let searchResults;
+        try {
+            // Access the client's fetchSearchTweets method
+            searchResults = await twitterClient.client.fetchSearchTweets(
+                topic,
+                100,
+                2 // SearchMode.Latest
+            );
+        } catch (error) {
+            elizaLogger.error("Error searching tweets:", error);
+            callback?.({
+                text: "I encountered an error while searching for tweets. Please try again.",
+                action: "REPLY"
+            });
+            return false;
         }
+
+        let tweets = searchResults.tweets.map(convertTweetFormat);
         elizaLogger.log(`Successfully fetched ${tweets.length} tweets.`);
 
         tweets = tweets.map((t) => ({
@@ -445,21 +400,17 @@ export const dkgAnalyzeSentiment: Action = {
 
             if (!createAssetResult?.UAL) {
                 elizaLogger.error("UAL not found after asset creation.");
-                await postTweet(
-                    `Apologies, something went wrong with the sentiment analysis.`,
-                    scraper,
-                    postId,
-                );
+                callback?.({
+                    text: `Apologies, something went wrong with the sentiment analysis.`,
+                    action: "REPLY"
+                });
                 return true;
             }
 
             elizaLogger.log("======================== ASSET CREATED");
             elizaLogger.log(JSON.stringify(createAssetResult));
 
-            // Proceed with posting sentiment analysis tweet
-            const sentimentData = await getSentimentChart(averageScore, topic);
-            const file = await fetchFileFromUrl(sentimentData.url);
-
+            // Build the sentiment analysis response
             let tweetContent = `${topic} sentiment based on top ${tweets.length} latest posts`;
             if (numOfTotalTweets - tweets.length > 0) {
                 tweetContent += ` and ${numOfTotalTweets - tweets.length} existing analysis Knowledge Assets`;
@@ -478,17 +429,22 @@ export const dkgAnalyzeSentiment: Action = {
 
             tweetContent += `This is not financial advice.`;
 
-            await postTweet(tweetContent.trim(), scraper, postId, file.data);
+            // Return via callback (let the main Twitter client post it)
+            callback?.({
+                text: tweetContent.trim(),
+                action: "REPLY"
+            });
+            
+            elizaLogger.log("Sentiment analysis completed successfully");
         } catch (error) {
             elizaLogger.error(
                 "Unexpected error in sentiment analysis process:",
                 error.message,
             );
-            await postTweet(
-                `Apologies, something went wrong with the sentiment analysis.`,
-                scraper,
-                postId,
-            );
+            callback?.({
+                text: `Apologies, something went wrong with the sentiment analysis.`,
+                action: "REPLY"
+            });
         }
         return true;
     },

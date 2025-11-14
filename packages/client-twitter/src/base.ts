@@ -211,7 +211,7 @@ export class ClientBase extends EventEmitter {
                 };
             }
 
-            const result = await this.requestQueue.add(async () => 
+            const result = await this.requestQueue.add(async () =>
                 await this.v2Client.v2.tweet(tweetPayload)
             );
 
@@ -234,7 +234,7 @@ export class ClientBase extends EventEmitter {
                 quote_tweet_id: quotedTweetId
             };
 
-            const result = await this.requestQueue.add(async () => 
+            const result = await this.requestQueue.add(async () =>
                 await this.v2Client.v2.tweet(tweetPayload)
             );
 
