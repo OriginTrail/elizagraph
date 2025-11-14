@@ -12,7 +12,6 @@ import {
 } from "@elizaos/core";
 import {
     type QueryTweetsResponse,
-    Scraper,
     SearchMode,
     type Tweet,
 } from "agent-twitter-client";
@@ -85,8 +84,6 @@ class RequestQueue {
 }
 
 export class ClientBase extends EventEmitter {
-    static _twitterClients: { [accountIdentifier: string]: Scraper } = {};
-    twitterClient: Scraper;
     v2Client: TwitterApi | null = null; // Twitter API v2 client for OAuth operations
     isInitialized: boolean = false; // Flag to prevent double initialization
     runtime: IAgentRuntime;
@@ -258,13 +255,6 @@ export class ClientBase extends EventEmitter {
         super();
         this.runtime = runtime;
         this.twitterConfig = twitterConfig;
-        const username = twitterConfig.TWITTER_USERNAME;
-        if (ClientBase._twitterClients[username]) {
-            this.twitterClient = ClientBase._twitterClients[username];
-        } else {
-            this.twitterClient = new Scraper();
-            ClientBase._twitterClients[username] = this.twitterClient;
-        }
 
         this.directions =
             "- " +
@@ -808,18 +798,6 @@ export class ClientBase extends EventEmitter {
         await this.cacheMentions(mentionsAndInteractions.tweets);
     }
 
-    async setCookiesFromArray(cookiesArray: any[]) {
-        const cookieStrings = cookiesArray.map(
-            (cookie) =>
-                `${cookie.key}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}; ${
-                    cookie.secure ? "Secure" : ""
-                }; ${cookie.httpOnly ? "HttpOnly" : ""}; SameSite=${
-                    cookie.sameSite || "Lax"
-                }`
-        );
-        await this.twitterClient.setCookies(cookieStrings);
-    }
-
     async saveRequestMessage(message: Memory, state: State) {
         if (message.content.text) {
             const recentMessage = await this.runtime.messageManager.getMemories(
@@ -844,7 +822,7 @@ export class ClientBase extends EventEmitter {
 
             await this.runtime.evaluate(message, {
                 ...state,
-                twitterClient: this.twitterClient,
+                twitterClient: this, // Pass the ClientBase instance which has all OAuth v2 methods
             });
         }
     }
