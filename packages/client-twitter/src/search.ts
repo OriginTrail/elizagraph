@@ -235,7 +235,7 @@ export class TwitterSearchClient {
             }
 
             let state = await this.runtime.composeState(message, {
-                twitterClient: this.client.twitterClient,
+                twitterClient: this.client, // ClientBase instance with OAuth v2 methods
                 twitterUserName: this.twitterUsername,
                 timeline: formattedHomeTimeline,
                 tweetContext: `${tweetBackground}

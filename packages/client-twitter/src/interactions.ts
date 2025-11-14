@@ -366,7 +366,7 @@ export class TwitterInteractionClient {
         }
 
         let state = await this.runtime.composeState(message, {
-            twitterClient: this.client.twitterClient,
+            twitterClient: this.client, // ClientBase instance with OAuth v2 methods
             twitterUserName: this.client.twitterConfig.TWITTER_USERNAME,
             currentPost,
             formattedConversation,
