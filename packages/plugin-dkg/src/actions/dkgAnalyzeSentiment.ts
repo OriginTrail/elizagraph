@@ -30,11 +30,11 @@ function getTwitterClient(runtime: IAgentRuntime): any {
     const twitterClient = (runtime as any).clients?.find(
         (client: any) => client.constructor.name === "TwitterClientInterface"
     );
-    
+
     if (!twitterClient) {
         throw new Error("Twitter client not found in runtime");
     }
-    
+
     return twitterClient;
 }
 
@@ -300,7 +300,7 @@ export const dkgAnalyzeSentiment: Action = {
 
         // Use OAuth v2 search (already implemented in client-twitter)
         elizaLogger.log(`Searching for tweets about: ${topic}`);
-        
+
         let searchResults;
         try {
             // Access the client's fetchSearchTweets method
@@ -434,7 +434,7 @@ export const dkgAnalyzeSentiment: Action = {
                 text: tweetContent.trim(),
                 action: "REPLY"
             });
-            
+
             elizaLogger.log("Sentiment analysis completed successfully");
         } catch (error) {
             elizaLogger.error(
