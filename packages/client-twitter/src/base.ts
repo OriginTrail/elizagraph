@@ -297,7 +297,7 @@ export class ClientBase extends EventEmitter {
         }
 
         await this.loadLatestCheckedTweetId();
-        
+
         // Skip populateTimeline when using OAuth - timeline will be populated
         // naturally as the bot processes mentions and interactions
         // await this.populateTimeline();
