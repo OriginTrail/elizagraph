@@ -123,7 +123,7 @@ export async function buildConversationThread(
                 currentTweet.inReplyToStatusId,
             );
             try {
-                const parentTweet = await client.twitterClient.getTweet(
+                const parentTweet = await client.getTweet(
                     currentTweet.inReplyToStatusId,
                 );
 
@@ -180,7 +180,7 @@ export async function sendTweet(
     let depth = 0;
 
     while (currentTweetId) {
-        const parentTweet = await client.twitterClient.getTweet(currentTweetId);
+        const parentTweet = await client.getTweet(currentTweetId);
         if (!parentTweet || !parentTweet.inReplyToStatusId) {
             break;
         }
