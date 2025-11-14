@@ -267,14 +267,15 @@ export async function sendTweet(
         // if we have a response
         if (result && result.data) {
             // Parse the response from twitter-api-v2
+            const tweetData: any = result.data; // Cast to any to access extended fields
             const finalTweet: Tweet = {
-                id: result.data.id,
-                text: result.data.text,
-                conversationId: result.data.conversation_id || result.data.id,
+                id: tweetData.id,
+                text: tweetData.text,
+                conversationId: tweetData.conversation_id || tweetData.id,
                 timestamp: new Date().getTime() / 1000,
                 userId: client.profile?.id || '',
                 inReplyToStatusId: previousTweetId || undefined,
-                permanentUrl: `https://twitter.com/${twitterUsername}/status/${result.data.id}`,
+                permanentUrl: `https://twitter.com/${twitterUsername}/status/${tweetData.id}`,
                 hashtags: [],
                 mentions: [],
                 photos: [],
