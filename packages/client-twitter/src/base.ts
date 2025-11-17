@@ -407,7 +407,7 @@ export class ClientBase extends EventEmitter {
                     userId: this.profile.id,
                     username: this.profile.username,
                     name: this.profile.screenName,
-                    inReplyToStatusId: tweet.in_reply_to_user_id || undefined,
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
                     permanentUrl: `https://twitter.com/${this.profile.username}/status/${tweet.id}`,
                     hashtags: [],
                     mentions: [],
@@ -461,7 +461,7 @@ export class ClientBase extends EventEmitter {
                     userId: tweet.author_id!,
                     username: author?.username || '',
                     name: author?.name || '',
-                    inReplyToStatusId: tweet.in_reply_to_user_id || undefined,
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
                     permanentUrl: `https://twitter.com/${author?.username}/status/${tweet.id}`,
                     hashtags: [],
                     mentions: [],
@@ -532,7 +532,7 @@ export class ClientBase extends EventEmitter {
                     userId: tweet.author_id!,
                     username: author?.username || '',
                     name: author?.name || '',
-                    inReplyToStatusId: tweet.in_reply_to_user_id || undefined,
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
                     permanentUrl: `https://twitter.com/${author?.username}/status/${tweet.id}`,
                     hashtags: [],
                     mentions: [],
@@ -835,6 +835,12 @@ export class ClientBase extends EventEmitter {
 
         if (latestCheckedTweetId) {
             this.lastCheckedTweetId = BigInt(latestCheckedTweetId);
+            elizaLogger.info(`Loaded last checked tweet ID from cache: ${this.lastCheckedTweetId}`);
+        } else {
+            // First run - start with no cached ID
+            // The interaction loop will fetch mentions and process them chronologically
+            elizaLogger.info('No cached tweet ID found. Will start processing mentions chronologically from oldest in backlog.');
+            this.lastCheckedTweetId = undefined as any; // Will be set after processing first mention
         }
     }
 
@@ -958,7 +964,14 @@ export class ClientBase extends EventEmitter {
 
             // Convert to Tweet format
             const tweets: Tweet[] = [];
+            let count = 0;
             for await (const tweet of mentions) {
+                // Stop after maxResults to prevent auto-pagination
+                if (count >= maxResults) {
+                    break;
+                }
+                count++;
+
                 const author = mentions.includes.users?.find(u => u.id === tweet.author_id);
 
                 tweets.push({

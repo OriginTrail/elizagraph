@@ -50,26 +50,37 @@ class TwitterManager {
 
 export const TwitterClientInterface: Client = {
     async start(runtime: IAgentRuntime) {
+        elizaLogger.info("🔵 TwitterClientInterface.start() CALLED - Beginning initialization...");
+
         const twitterConfig: TwitterConfig =
             await validateTwitterConfig(runtime);
 
-        elizaLogger.log("Twitter client started");
+        elizaLogger.info("🔵 Twitter config validated, creating manager...");
+        elizaLogger.info("Twitter client started");
 
         const manager = new TwitterManager(runtime, twitterConfig);
+        elizaLogger.info("🔵 Manager created, starting client.init()...");
 
         // Initialize login/session
         await manager.client.init();
+        elizaLogger.info("🔵 Client.init() completed, starting post loop...");
 
         // Start the posting loop (now uses OAuth v2 API)
         await manager.post.start();
+        elizaLogger.info("🔵 Post loop started, checking for search...");
 
         // Start the search logic if it exists (now uses OAuth v2 API)
         if (manager.search) {
             await manager.search.start();
+            elizaLogger.info("🔵 Search started");
+        } else {
+            elizaLogger.info("🔵 Search disabled, skipping");
         }
 
+        elizaLogger.info("🔵 Starting interaction loop...");
         // Start interactions (mentions, replies)
         await manager.interaction.start();
+        elizaLogger.info("🔵 Interaction loop started!");
 
         // If Spaces are enabled, start the periodic check
         if (manager.space) {

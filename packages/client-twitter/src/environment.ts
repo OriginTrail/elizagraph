@@ -194,7 +194,7 @@ export async function validateTwitterConfig(
             TWITTER_POLL_INTERVAL: safeParseInt(
                 runtime.getSetting("TWITTER_POLL_INTERVAL") ||
                     process.env.TWITTER_POLL_INTERVAL,
-                120 // 2m
+                75 // 75s = 12 replies per 15 min (80% of GET rate limit: 15/15min)
             ),
 
             // comma separated string

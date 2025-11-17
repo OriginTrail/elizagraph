@@ -3,10 +3,12 @@ dotenv.config();
 import { MilvusClient } from "@zilliz/milvus2-sdk-node";
 import axios from "axios";
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
+
 const client = new MilvusClient({
     address: process.env.MILVUS_ADDRESS,
     token: process.env.MILVUS_TOKEN,
 });
+
 interface MilvusData {
     [x: string]: number[] | string;
     vector: number[];

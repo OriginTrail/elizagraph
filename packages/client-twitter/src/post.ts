@@ -303,17 +303,18 @@ export class TwitterPostClient {
         client: any,
         twitterUsername: string,
     ): Tweet {
+        // Twitter API v2 format
         return {
-            id: tweetResult.rest_id,
+            id: tweetResult.id,
             name: client.profile.screenName,
             username: client.profile.username,
-            text: tweetResult.legacy.full_text,
-            conversationId: tweetResult.legacy.conversation_id_str,
-            createdAt: tweetResult.legacy.created_at,
-            timestamp: new Date(tweetResult.legacy.created_at).getTime(),
+            text: tweetResult.text,
+            conversationId: tweetResult.conversation_id || tweetResult.id,
+            createdAt: new Date().toISOString(), // API v2 doesn't return created_at in tweet response
+            timestamp: Date.now(),
             userId: client.profile.id,
-            inReplyToStatusId: tweetResult.legacy.in_reply_to_status_id_str,
-            permanentUrl: `https://twitter.com/${twitterUsername}/status/${tweetResult.rest_id}`,
+            inReplyToStatusId: tweetResult.reply_settings?.in_reply_to_tweet_id || undefined,
+            permanentUrl: `https://twitter.com/${twitterUsername}/status/${tweetResult.id}`,
             hashtags: [],
             mentions: [],
             photos: [],
