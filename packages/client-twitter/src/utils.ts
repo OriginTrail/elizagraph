@@ -123,7 +123,7 @@ export async function buildConversationThread(
                 currentTweet.inReplyToStatusId,
             );
             try {
-                const parentTweet = await client.twitterClient.getTweet(
+                const parentTweet = await client.getTweet(
                     currentTweet.inReplyToStatusId,
                 );
 
@@ -180,7 +180,7 @@ export async function sendTweet(
     let depth = 0;
 
     while (currentTweetId) {
-        const parentTweet = await client.twitterClient.getTweet(currentTweetId);
+        const parentTweet = await client.getTweet(currentTweetId);
         if (!parentTweet || !parentTweet.inReplyToStatusId) {
             break;
         }
@@ -236,37 +236,46 @@ export async function sendTweet(
 
         const cleanChunk = deduplicateMentions(chunk.trim());
 
-        const result = await client.requestQueue.add(async () =>
-            isLongTweet
-                ? client.twitterClient.sendLongTweet(
-                      cleanChunk,
-                      previousTweetId,
-                      mediaData,
-                  )
-                : client.twitterClient.sendTweet(
-                      cleanChunk,
-                      previousTweetId,
-                      mediaData,
-                  ),
-        );
+        // Use Twitter API v2 for posting
+        if (!client.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
 
-        const body = await result.json();
-        const tweetResult = isLongTweet
-            ? body?.data?.notetweet_create?.tweet_results?.result
-            : body?.data?.create_tweet?.tweet_results?.result;
+        const result = await client.requestQueue.add(async () => {
+            // Build tweet payload
+            const tweetPayload: any = {
+                text: cleanChunk
+            };
+
+            // Add reply if this is part of a thread
+            if (previousTweetId) {
+                tweetPayload.reply = {
+                    in_reply_to_tweet_id: previousTweetId
+                };
+            }
+
+            // TODO: Add media support with twitter-api-v2
+            // For now, post without media
+            if (mediaData && mediaData.length > 0) {
+                elizaLogger.warn("Media attachments are not yet supported with twitter-api-v2. Posting text only.");
+            }
+
+            // Post the tweet
+            return await client.v2Client.v2.tweet(tweetPayload);
+        });
 
         // if we have a response
-        if (tweetResult) {
-            // Parse the response
+        if (result && result.data) {
+            // Parse the response from twitter-api-v2
+            const tweetData: any = result.data; // Cast to any to access extended fields
             const finalTweet: Tweet = {
-                id: tweetResult.rest_id,
-                text: tweetResult.legacy.full_text,
-                conversationId: tweetResult.legacy.conversation_id_str,
-                timestamp:
-                    new Date(tweetResult.legacy.created_at).getTime() / 1000,
-                userId: tweetResult.legacy.user_id_str,
-                inReplyToStatusId: tweetResult.legacy.in_reply_to_status_id_str,
-                permanentUrl: `https://twitter.com/${twitterUsername}/status/${tweetResult.rest_id}`,
+                id: tweetData.id,
+                text: tweetData.text,
+                conversationId: tweetData.conversation_id || tweetData.id,
+                timestamp: new Date().getTime() / 1000,
+                userId: client.profile?.id || '',
+                inReplyToStatusId: previousTweetId || undefined,
+                permanentUrl: `https://twitter.com/${twitterUsername}/status/${tweetData.id}`,
                 hashtags: [],
                 mentions: [],
                 photos: [],
@@ -279,7 +288,7 @@ export async function sendTweet(
         } else {
             elizaLogger.error("Error sending tweet chunk:", {
                 chunk,
-                response: body,
+                result,
             });
         }
 
@@ -423,28 +432,28 @@ function splitSentencesAndWords(text: string, maxLength: number): string[] {
 
 function deduplicateMentions(paragraph: string) {
     // Regex to match mentions at the beginning of the string
-    const mentionRegex = /^@(\w+)(?:\s+@(\w+))*(\s+|$)/;
+  const mentionRegex = /^@(\w+)(?:\s+@(\w+))*(\s+|$)/;
 
-    // Find all matches
-    const matches = paragraph.match(mentionRegex);
+  // Find all matches
+  const matches = paragraph.match(mentionRegex);
 
-    if (!matches) {
-        return paragraph; // If no matches, return the original string
-    }
+  if (!matches) {
+    return paragraph; // If no matches, return the original string
+  }
 
-    // Extract mentions from the match groups
+  // Extract mentions from the match groups
     let mentions = matches.slice(0, 1)[0].trim().split(" ");
 
-    // Deduplicate mentions
-    mentions = [...new Set(mentions)];
+  // Deduplicate mentions
+  mentions = [...new Set(mentions)];
 
-    // Reconstruct the string with deduplicated mentions
+  // Reconstruct the string with deduplicated mentions
     const uniqueMentionsString = mentions.join(" ");
 
-    // Find where the mentions end in the original string
-    const endOfMentions = paragraph.indexOf(matches[0]) + matches[0].length;
+  // Find where the mentions end in the original string
+  const endOfMentions = paragraph.indexOf(matches[0]) + matches[0].length;
 
-    // Construct the result by combining unique mentions with the rest of the string
+  // Construct the result by combining unique mentions with the rest of the string
     return uniqueMentionsString + " " + paragraph.slice(endOfMentions);
 }
 

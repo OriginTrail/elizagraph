@@ -12,10 +12,10 @@ import {
 } from "@elizaos/core";
 import {
     type QueryTweetsResponse,
-    Scraper,
     SearchMode,
     type Tweet,
 } from "agent-twitter-client";
+import { TwitterApi } from "twitter-api-v2";
 import { EventEmitter } from "events";
 import type { TwitterConfig } from "./environment.ts";
 
@@ -84,8 +84,8 @@ class RequestQueue {
 }
 
 export class ClientBase extends EventEmitter {
-    static _twitterClients: { [accountIdentifier: string]: Scraper } = {};
-    twitterClient: Scraper;
+    v2Client: TwitterApi | null = null; // Twitter API v2 client for OAuth operations
+    isInitialized: boolean = false; // Flag to prevent double initialization
     runtime: IAgentRuntime;
     twitterConfig: TwitterConfig;
     directions: string;
@@ -121,12 +121,126 @@ export class ClientBase extends EventEmitter {
             return cachedTweet;
         }
 
-        const tweet = await this.requestQueue.add(() =>
-            this.twitterClient.getTweet(tweetId)
-        );
+        // Use Twitter API v2 instead of the old Scraper (which uses guest tokens)
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        const tweet = await this.requestQueue.add(async () => {
+            const tweetData = await this.v2Client.v2.singleTweet(tweetId, {
+                'tweet.fields': ['created_at', 'author_id', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets'],
+                'user.fields': ['username', 'name'],
+                expansions: ['author_id']
+            });
+
+            if (!tweetData.data) {
+                throw new Error(`Tweet ${tweetId} not found`);
+            }
+
+            const t = tweetData.data;
+            const author = tweetData.includes?.users?.[0];
+
+            // Convert v2 format to our Tweet format
+            return {
+                id: t.id,
+                text: t.text || '',
+                conversationId: t.conversation_id || t.id,
+                timestamp: t.created_at ? new Date(t.created_at).getTime() / 1000 : Date.now() / 1000,
+                userId: t.author_id || '',
+                username: author?.username || '',
+                name: author?.name || '',
+                inReplyToStatusId: t.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
+                permanentUrl: `https://twitter.com/${author?.username}/status/${t.id}`,
+                hashtags: [],
+                mentions: [],
+                photos: [],
+                thread: [],
+                urls: [],
+                videos: []
+            } as Tweet;
+        });
 
         await this.cacheTweet(tweet);
         return tweet;
+    }
+
+    async likeTweet(tweetId: string): Promise<void> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            await this.v2Client.v2.like(this.profile.id, tweetId);
+            elizaLogger.log(`Liked tweet ${tweetId}`);
+        } catch (error) {
+            elizaLogger.error(`Error liking tweet ${tweetId}:`, error);
+            throw error;
+        }
+    }
+
+    async retweet(tweetId: string): Promise<void> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            await this.v2Client.v2.retweet(this.profile.id, tweetId);
+            elizaLogger.log(`Retweeted tweet ${tweetId}`);
+        } catch (error) {
+            elizaLogger.error(`Error retweeting tweet ${tweetId}:`, error);
+            throw error;
+        }
+    }
+
+    async sendStandardTweet(content: string, replyToTweetId?: string): Promise<any> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            const tweetPayload: any = {
+                text: content
+            };
+
+            if (replyToTweetId) {
+                tweetPayload.reply = {
+                    in_reply_to_tweet_id: replyToTweetId
+                };
+            }
+
+            const result = await this.requestQueue.add(async () =>
+                await this.v2Client.v2.tweet(tweetPayload)
+            );
+
+            elizaLogger.log(`Sent standard tweet: ${result.data.id}`);
+            return result.data;
+        } catch (error) {
+            elizaLogger.error("Error sending standard tweet:", error);
+            throw error;
+        }
+    }
+
+    async sendQuoteTweet(content: string, quotedTweetId: string): Promise<any> {
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            const tweetPayload: any = {
+                text: content,
+                quote_tweet_id: quotedTweetId
+            };
+
+            const result = await this.requestQueue.add(async () =>
+                await this.v2Client.v2.tweet(tweetPayload)
+            );
+
+            elizaLogger.log(`Sent quote tweet: ${result.data.id}`);
+            return result.data;
+        } catch (error) {
+            elizaLogger.error("Error sending quote tweet:", error);
+            throw error;
+        }
     }
 
     callback: (self: ClientBase) => any = null;
@@ -141,13 +255,6 @@ export class ClientBase extends EventEmitter {
         super();
         this.runtime = runtime;
         this.twitterConfig = twitterConfig;
-        const username = twitterConfig.TWITTER_USERNAME;
-        if (ClientBase._twitterClients[username]) {
-            this.twitterClient = ClientBase._twitterClients[username];
-        } else {
-            this.twitterClient = new Scraper();
-            ClientBase._twitterClients[username] = this.twitterClient;
-        }
 
         this.directions =
             "- " +
@@ -156,67 +263,87 @@ export class ClientBase extends EventEmitter {
             this.runtime.character.style.post.join();
     }
 
+    /**
+     * Initialize Twitter API v2 client with OAuth 1.0a credentials
+     * This is the clean, official way to authenticate with Twitter
+     */
+    private async initializeV2Client(): Promise<boolean> {
+        try {
+            const apiKey = this.twitterConfig.TWITTER_API_KEY;
+            const apiSecret = this.twitterConfig.TWITTER_API_SECRET;
+            const accessToken = this.twitterConfig.TWITTER_ACCESS_TOKEN;
+            const accessSecret = this.twitterConfig.TWITTER_ACCESS_SECRET;
+
+            if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
+                elizaLogger.error("Missing Twitter OAuth credentials. Please set:");
+                elizaLogger.error("- TWITTER_API_KEY");
+                elizaLogger.error("- TWITTER_API_SECRET");
+                elizaLogger.error("- TWITTER_ACCESS_TOKEN");
+                elizaLogger.error("- TWITTER_ACCESS_SECRET");
+                return false;
+            }
+
+            elizaLogger.info("Initializing Twitter API v2 client with OAuth credentials...");
+
+            // Create Twitter API v2 client
+            this.v2Client = new TwitterApi({
+                appKey: apiKey,
+                appSecret: apiSecret,
+                accessToken: accessToken,
+                accessSecret: accessSecret,
+            });
+
+            // Verify authentication by fetching user info
+            elizaLogger.info("Verifying OAuth authentication...");
+            const me = await this.v2Client.v2.me();
+
+            if (me && me.data) {
+                elizaLogger.success(`✅ Authenticated as @${me.data.username} (ID: ${me.data.id})`);
+
+                // Initialize profile
+                await this.initializeProfile(me.data.username);
+                return true;
+            } else {
+                elizaLogger.error("OAuth authentication succeeded but no user data returned");
+                return false;
+            }
+        } catch (error) {
+            elizaLogger.error("Twitter OAuth authentication failed:", {
+                message: error.message,
+                code: error.code,
+                rateLimit: error.rateLimit
+            });
+            return false;
+        }
+    }
+
     async init() {
-        const username = this.twitterConfig.TWITTER_USERNAME;
-        const password = this.twitterConfig.TWITTER_PASSWORD;
-        const email = this.twitterConfig.TWITTER_EMAIL;
-        let retries = this.twitterConfig.TWITTER_RETRY_LIMIT;
-        const twitter2faSecret = this.twitterConfig.TWITTER_2FA_SECRET;
-
-        if (!username) {
-            throw new Error("Twitter username not configured");
+        // Prevent double initialization
+        if (this.isInitialized) {
+            elizaLogger.debug("Twitter client already initialized, skipping...");
+            return;
         }
 
-        const cachedCookies = await this.getCachedCookies(username);
+        elizaLogger.info("Initializing Twitter client...");
 
-        if (cachedCookies) {
-            elizaLogger.info("Using cached cookies");
-            await this.setCookiesFromArray(cachedCookies);
-        }
+        const success = await this.initializeV2Client();
 
-        elizaLogger.log("Waiting for Twitter login");
-        while (retries > 0) {
-            try {
-                if (await this.twitterClient.isLoggedIn()) {
-                    // cookies are valid, no login required
-                    elizaLogger.info("Successfully logged in.");
-                    break;
-                } else {
-                    await this.twitterClient.login(
-                        username,
-                        password,
-                        email,
-                        twitter2faSecret
-                    );
-                    if (await this.twitterClient.isLoggedIn()) {
-                        // fresh login, store new cookies
-                        elizaLogger.info("Successfully logged in.");
-                        elizaLogger.info("Caching cookies");
-                        await this.cacheCookies(
-                            username,
-                            await this.twitterClient.getCookies()
-                        );
-                        break;
-                    }
-                }
-            } catch (error) {
-                elizaLogger.error(`Login attempt failed: ${error.message}`);
-            }
-
-            retries--;
-            elizaLogger.error(
-                `Failed to login to Twitter. Retrying... (${retries} attempts left)`
+        if (!success) {
+            throw new Error(
+                "Failed to initialize Twitter client. Please ensure you have set all required OAuth credentials:\n" +
+                "  - TWITTER_API_KEY\n" +
+                "  - TWITTER_API_SECRET\n" +
+                "  - TWITTER_ACCESS_TOKEN\n" +
+                "  - TWITTER_ACCESS_SECRET\n" +
+                "These can be obtained from https://developer.twitter.com/en/portal/dashboard"
             );
-
-            if (retries === 0) {
-                elizaLogger.error(
-                    "Max retries reached. Exiting login process."
-                );
-                throw new Error("Twitter login failed after maximum retries.");
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, 2000));
         }
+
+        this.isInitialized = true;
+        elizaLogger.success("✅ Twitter client initialized successfully!");
+    }
+
+    async initializeProfile(username: string) {
         // Initialize Twitter profile
         this.profile = await this.fetchProfile(username);
 
@@ -224,7 +351,7 @@ export class ClientBase extends EventEmitter {
             elizaLogger.log("Twitter user ID:", this.profile.id);
             elizaLogger.log(
                 "Twitter loaded:",
-                JSON.stringify(this.profile, null, 10)
+                JSON.stringify(this.profile, null, 2)
             );
             // Store profile info for use in responses
             this.runtime.character.twitterProfile = {
@@ -239,16 +366,64 @@ export class ClientBase extends EventEmitter {
         }
 
         await this.loadLatestCheckedTweetId();
-        await this.populateTimeline();
+
+        // Skip populateTimeline when using OAuth - timeline will be populated
+        // naturally as the bot processes mentions and interactions
+        // await this.populateTimeline();
+    }
+
+    async clearCachedCookies(username: string) {
+        try {
+            await this.runtime.cacheManager.delete(`twitter/${username}/cookies`);
+            elizaLogger.info(`Cleared cached cookies for ${username}`);
+        } catch (error) {
+            elizaLogger.warn(`Failed to clear cached cookies: ${error.message}`);
+        }
     }
 
     async fetchOwnPosts(count: number): Promise<Tweet[]> {
-        elizaLogger.debug("fetching own posts");
-        const homeTimeline = await this.twitterClient.getUserTweets(
-            this.profile.id,
-            count
-        );
-        return homeTimeline.tweets;
+        elizaLogger.debug("fetching own posts with OAuth v2");
+
+        if (!this.v2Client || !this.profile?.id) {
+            throw new Error("Twitter API v2 client or profile not initialized");
+        }
+
+        try {
+            const userTweets = await this.v2Client.v2.userTimeline(this.profile.id, {
+                max_results: Math.min(count, 100),
+                'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets', 'author_id'],
+                'user.fields': ['username', 'name'],
+                expansions: ['author_id']
+            });
+
+            const tweets: Tweet[] = [];
+
+            for await (const tweet of userTweets) {
+                tweets.push({
+                    id: tweet.id,
+                    text: tweet.text,
+                    conversationId: tweet.conversation_id || tweet.id,
+                    timestamp: new Date(tweet.created_at!).getTime() / 1000,
+                    userId: this.profile.id,
+                    username: this.profile.username,
+                    name: this.profile.screenName,
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
+                    permanentUrl: `https://twitter.com/${this.profile.username}/status/${tweet.id}`,
+                    hashtags: [],
+                    mentions: [],
+                    photos: [],
+                    thread: [],
+                    urls: [],
+                    videos: []
+                });
+            }
+
+            elizaLogger.debug(`Fetched ${tweets.length} own posts`);
+            return tweets;
+        } catch (error) {
+            elizaLogger.error("Error fetching own posts:", error);
+            return [];
+        }
     }
 
     /**
@@ -258,110 +433,64 @@ export class ClientBase extends EventEmitter {
         count: number,
         following?: boolean
     ): Promise<Tweet[]> {
-        elizaLogger.debug("fetching home timeline");
-        const homeTimeline = following
-            ? await this.twitterClient.fetchFollowingTimeline(count, [])
-            : await this.twitterClient.fetchHomeTimeline(count, []);
+        elizaLogger.debug("fetching home timeline with OAuth v2");
 
-        elizaLogger.debug(homeTimeline, { depth: Number.POSITIVE_INFINITY });
-        const processedTimeline = homeTimeline
-            .filter((t) => t.__typename !== "TweetWithVisibilityResults") // what's this about?
-            .map((tweet) => {
-                //console.log("tweet is", tweet);
-                const obj = {
-                    id: tweet.id,
-                    name:
-                        tweet.name ?? tweet?.user_results?.result?.legacy.name,
-                    username:
-                        tweet.username ??
-                        tweet.core?.user_results?.result?.legacy.screen_name,
-                    text: tweet.text ?? tweet.legacy?.full_text,
-                    inReplyToStatusId:
-                        tweet.inReplyToStatusId ??
-                        tweet.legacy?.in_reply_to_status_id_str ??
-                        null,
-                    timestamp:
-                        new Date(tweet.legacy?.created_at).getTime() / 1000,
-                    createdAt:
-                        tweet.createdAt ??
-                        tweet.legacy?.created_at ??
-                        tweet.core?.user_results?.result?.legacy.created_at,
-                    userId: tweet.userId ?? tweet.legacy?.user_id_str,
-                    conversationId:
-                        tweet.conversationId ??
-                        tweet.legacy?.conversation_id_str,
-                    permanentUrl: `https://x.com/${tweet.core?.user_results?.result?.legacy?.screen_name}/status/${tweet.rest_id}`,
-                    hashtags: tweet.hashtags ?? tweet.legacy?.entities.hashtags,
-                    mentions:
-                        tweet.mentions ?? tweet.legacy?.entities.user_mentions,
-                    photos:
-                        tweet.legacy?.entities?.media
-                            ?.filter((media) => media.type === "photo")
-                            .map((media) => ({
-                                id: media.id_str,
-                                url: media.media_url_https, // Store media_url_https as url
-                                alt_text: media.alt_text,
-                            })) || [],
-                    thread: tweet.thread || [],
-                    urls: tweet.urls ?? tweet.legacy?.entities.urls,
-                    videos:
-                        tweet.videos ??
-                        tweet.legacy?.entities.media?.filter(
-                            (media) => media.type === "video"
-                        ) ??
-                        [],
-                };
-                //console.log("obj is", obj);
-                return obj;
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            // Fetch home timeline using Twitter API v2
+            const timeline = await this.v2Client.v2.homeTimeline({
+                max_results: Math.min(count, 100),
+                'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets', 'author_id'],
+                'user.fields': ['username', 'name'],
+                expansions: ['author_id', 'referenced_tweets.id']
             });
-        //elizaLogger.debug("process homeTimeline", processedTimeline);
-        return processedTimeline;
+
+            const tweets: Tweet[] = [];
+
+            for await (const tweet of timeline) {
+                const author = timeline.includes.users?.find(u => u.id === tweet.author_id);
+
+                tweets.push({
+                    id: tweet.id,
+                    text: tweet.text,
+                    conversationId: tweet.conversation_id || tweet.id,
+                    timestamp: new Date(tweet.created_at!).getTime() / 1000,
+                    userId: tweet.author_id!,
+                    username: author?.username || '',
+                    name: author?.name || '',
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
+                    permanentUrl: `https://twitter.com/${author?.username}/status/${tweet.id}`,
+                    hashtags: [],
+                    mentions: [],
+                    photos: [],
+                    thread: [],
+                    urls: [],
+                    videos: []
+                });
+            }
+
+            elizaLogger.debug(`Fetched ${tweets.length} tweets from home timeline`);
+            return tweets;
+        } catch (error) {
+            elizaLogger.error("Error fetching home timeline:", error);
+            return [];
+        }
     }
 
     async fetchTimelineForActions(count: number): Promise<Tweet[]> {
-        elizaLogger.debug("fetching timeline for actions");
+        elizaLogger.debug("fetching timeline for actions with OAuth v2");
 
         const agentUsername = this.twitterConfig.TWITTER_USERNAME;
 
-        const homeTimeline =
-            this.twitterConfig.ACTION_TIMELINE_TYPE ===
-            ActionTimelineType.Following
-                ? await this.twitterClient.fetchFollowingTimeline(count, [])
-                : await this.twitterClient.fetchHomeTimeline(count, []);
+        // Use the new OAuth v2 implementation
+        const following = this.twitterConfig.ACTION_TIMELINE_TYPE === ActionTimelineType.Following;
+        const homeTimeline = await this.fetchHomeTimeline(count, following);
 
-        return homeTimeline
-            .map((tweet) => ({
-                id: tweet.rest_id,
-                name: tweet.core?.user_results?.result?.legacy?.name,
-                username: tweet.core?.user_results?.result?.legacy?.screen_name,
-                text: tweet.legacy?.full_text,
-                inReplyToStatusId: tweet.legacy?.in_reply_to_status_id_str,
-                timestamp: new Date(tweet.legacy?.created_at).getTime() / 1000,
-                userId: tweet.legacy?.user_id_str,
-                conversationId: tweet.legacy?.conversation_id_str,
-                permanentUrl: `https://twitter.com/${tweet.core?.user_results?.result?.legacy?.screen_name}/status/${tweet.rest_id}`,
-                hashtags: tweet.legacy?.entities?.hashtags || [],
-                mentions: tweet.legacy?.entities?.user_mentions || [],
-                photos:
-                    tweet.legacy?.entities?.media
-                        ?.filter((media) => media.type === "photo")
-                        .map((media) => ({
-                            id: media.id_str,
-                            url: media.media_url_https, // Store media_url_https as url
-                            alt_text: media.alt_text,
-                        })) || [],
-                thread: tweet.thread || [],
-                urls: tweet.legacy?.entities?.urls || [],
-                videos:
-                    tweet.legacy?.entities?.media?.filter(
-                        (media) => media.type === "video"
-                    ) || [],
-            }))
-            .filter((tweet) => tweet.username !== agentUsername) // do not perform action on self-tweets
-            .slice(0, count);
-        // TODO: Once the 'count' parameter is fixed in the 'fetchTimeline' method of the 'agent-twitter-client',
-        // this workaround can be removed.
-        // Related issue: https://github.com/elizaos/agent-twitter-client/issues/43
+        // Filter out self-tweets
+        return homeTimeline.filter((tweet) => tweet.username !== agentUsername);
     }
 
     async fetchSearchTweets(
@@ -370,31 +499,60 @@ export class ClientBase extends EventEmitter {
         searchMode: SearchMode,
         cursor?: string
     ): Promise<QueryTweetsResponse> {
-        try {
-            // Sometimes this fails because we are rate limited. in this case, we just need to return an empty array
-            // if we dont get a response in 5 seconds, something is wrong
-            const timeoutPromise = new Promise((resolve) =>
-                setTimeout(() => resolve({ tweets: [] }), 15000)
-            );
+        elizaLogger.debug(`Searching tweets with OAuth v2: "${query}"`);
 
-            try {
-                const result = await this.requestQueue.add(
-                    async () =>
-                        await Promise.race([
-                            this.twitterClient.fetchSearchTweets(
-                                query,
-                                maxTweets,
-                                searchMode,
-                                cursor
-                            ),
-                            timeoutPromise,
-                        ])
-                );
-                return (result ?? { tweets: [] }) as QueryTweetsResponse;
-            } catch (error) {
-                elizaLogger.error("Error fetching search tweets:", error);
-                return { tweets: [] };
+        if (!this.v2Client) {
+            throw new Error("Twitter API v2 client not initialized");
+        }
+
+        try {
+            const searchParams: any = {
+                query: query,
+                max_results: Math.min(maxTweets, 100),
+                'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets', 'author_id'],
+                'user.fields': ['username', 'name'],
+                expansions: ['author_id', 'referenced_tweets.id']
+            };
+
+            if (cursor) {
+                searchParams.next_token = cursor;
             }
+
+            const searchResults = await this.v2Client.v2.search(query, searchParams);
+            const tweets: Tweet[] = [];
+
+            for await (const tweet of searchResults) {
+                const author = searchResults.includes.users?.find(u => u.id === tweet.author_id);
+
+                tweets.push({
+                    id: tweet.id,
+                    text: tweet.text,
+                    conversationId: tweet.conversation_id || tweet.id,
+                    timestamp: new Date(tweet.created_at!).getTime() / 1000,
+                    userId: tweet.author_id!,
+                    username: author?.username || '',
+                    name: author?.name || '',
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
+                    permanentUrl: `https://twitter.com/${author?.username}/status/${tweet.id}`,
+                    hashtags: [],
+                    mentions: [],
+                    photos: [],
+                    thread: [],
+                    urls: [],
+                    videos: []
+                });
+
+                if (tweets.length >= maxTweets) {
+                    break;
+                }
+            }
+
+            elizaLogger.debug(`Found ${tweets.length} tweets for query: "${query}"`);
+
+            return {
+                tweets,
+                next: searchResults.meta.next_token
+            };
         } catch (error) {
             elizaLogger.error("Error fetching search tweets:", error);
             return { tweets: [] };
@@ -443,8 +601,8 @@ export class ClientBase extends EventEmitter {
                         )
                 );
 
-                console.log({
-                    processingTweets: tweetsToSave
+                elizaLogger.debug("Processing tweets:", {
+                    tweetIds: tweetsToSave
                         .map((tweet) => tweet.id)
                         .join(","),
                 });
@@ -640,18 +798,6 @@ export class ClientBase extends EventEmitter {
         await this.cacheMentions(mentionsAndInteractions.tweets);
     }
 
-    async setCookiesFromArray(cookiesArray: any[]) {
-        const cookieStrings = cookiesArray.map(
-            (cookie) =>
-                `${cookie.key}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}; ${
-                    cookie.secure ? "Secure" : ""
-                }; ${cookie.httpOnly ? "HttpOnly" : ""}; SameSite=${
-                    cookie.sameSite || "Lax"
-                }`
-        );
-        await this.twitterClient.setCookies(cookieStrings);
-    }
-
     async saveRequestMessage(message: Memory, state: State) {
         if (message.content.text) {
             const recentMessage = await this.runtime.messageManager.getMemories(
@@ -676,7 +822,7 @@ export class ClientBase extends EventEmitter {
 
             await this.runtime.evaluate(message, {
                 ...state,
-                twitterClient: this.twitterClient,
+                twitterClient: this, // Pass the ClientBase instance which has all OAuth v2 methods
             });
         }
     }
@@ -689,6 +835,12 @@ export class ClientBase extends EventEmitter {
 
         if (latestCheckedTweetId) {
             this.lastCheckedTweetId = BigInt(latestCheckedTweetId);
+            elizaLogger.info(`Loaded last checked tweet ID from cache: ${this.lastCheckedTweetId}`);
+        } else {
+            // First run - start with no cached ID
+            // The interaction loop will fetch mentions and process them chronologically
+            elizaLogger.info('No cached tweet ID found. Will start processing mentions chronologically from oldest in backlog.');
+            this.lastCheckedTweetId = undefined as any; // Will be set after processing first mention
         }
     }
 
@@ -738,14 +890,26 @@ export class ClientBase extends EventEmitter {
 
     async fetchProfile(username: string): Promise<TwitterProfile> {
         try {
+            if (!this.v2Client) {
+                throw new Error("Twitter API v2 client not initialized");
+            }
+
             const profile = await this.requestQueue.add(async () => {
-                const profile = await this.twitterClient.getProfile(username);
+                // Use Twitter API v2 to fetch user by username
+                const user = await this.v2Client.v2.userByUsername(username, {
+                    'user.fields': ['description', 'name', 'id']
+                });
+
+                if (!user.data) {
+                    throw new Error(`User @${username} not found`);
+                }
+
                 return {
-                    id: profile.userId,
-                    username,
-                    screenName: profile.name || this.runtime.character.name,
+                    id: user.data.id,
+                    username: username,
+                    screenName: user.data.name || this.runtime.character.name,
                     bio:
-                        profile.biography ||
+                        user.data.description ||
                         typeof this.runtime.character.bio === "string"
                             ? (this.runtime.character.bio as string)
                             : this.runtime.character.bio.length > 0
@@ -758,7 +922,94 @@ export class ClientBase extends EventEmitter {
 
             return profile;
         } catch (error) {
-            console.error("Error fetching Twitter profile:", error);
+            elizaLogger.error("Error fetching Twitter profile:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch mentions for the authenticated user using Twitter API v2
+     * @param maxResults Maximum number of mentions to fetch (default: 10, max: 100)
+     * @param sinceId Only return tweets after this tweet ID
+     * @returns Array of Tweet objects representing mentions
+     */
+    async fetchMentions(maxResults: number = 10, sinceId?: string): Promise<Tweet[]> {
+        try {
+            if (!this.v2Client) {
+                throw new Error("Twitter API v2 client not initialized");
+            }
+
+            if (!this.profile || !this.profile.id) {
+                throw new Error("User profile not initialized");
+            }
+
+            elizaLogger.info(`Fetching up to ${maxResults} mentions${sinceId ? ` since tweet ${sinceId}` : ''}...`);
+
+            // Fetch mentions using Twitter API v2
+            const mentionsParams: any = {
+                max_results: Math.min(maxResults, 100), // API max is 100
+                'tweet.fields': ['created_at', 'conversation_id', 'in_reply_to_user_id', 'referenced_tweets', 'author_id'],
+                'user.fields': ['username', 'name'],
+                expansions: ['author_id', 'referenced_tweets.id']
+            };
+
+            if (sinceId) {
+                mentionsParams.since_id = sinceId;
+            }
+
+            const mentions = await this.v2Client.v2.userMentionTimeline(
+                this.profile.id,
+                mentionsParams
+            );
+
+            // Convert to Tweet format
+            const tweets: Tweet[] = [];
+            let count = 0;
+            for await (const tweet of mentions) {
+                // Stop after maxResults to prevent auto-pagination
+                if (count >= maxResults) {
+                    break;
+                }
+                count++;
+
+                const author = mentions.includes.users?.find(u => u.id === tweet.author_id);
+
+                tweets.push({
+                    id: tweet.id,
+                    text: tweet.text,
+                    conversationId: tweet.conversation_id || tweet.id,
+                    timestamp: tweet.created_at ? new Date(tweet.created_at).getTime() / 1000 : Date.now() / 1000,
+                    userId: tweet.author_id,
+                    username: author?.username || 'unknown',
+                    name: author?.name,
+                    inReplyToStatusId: tweet.referenced_tweets?.find(ref => ref.type === 'replied_to')?.id,
+                    permanentUrl: `https://twitter.com/${author?.username || 'i'}/status/${tweet.id}`,
+                    hashtags: [],
+                    mentions: [],
+                    photos: [],
+                    thread: [],
+                    urls: [],
+                    videos: [],
+                } as Tweet);
+            }
+
+            elizaLogger.info(`Found ${tweets.length} mention(s)`);
+            return tweets;
+        } catch (error) {
+            elizaLogger.error("Error fetching mentions:", {
+                message: error.message,
+                code: error.code,
+                rateLimit: error.rateLimit
+            });
+
+            // If rate limit error, provide helpful info
+            if (error.code === 429 || error.rateLimit) {
+                elizaLogger.warn("Rate limit hit when fetching mentions. Consider:");
+                elizaLogger.warn("1. Increasing the polling interval");
+                elizaLogger.warn("2. Upgrading to Twitter API paid tier");
+                elizaLogger.warn(`3. Rate limit resets at: ${error.rateLimit?.reset ? new Date(error.rateLimit.reset * 1000).toLocaleString() : 'unknown'}`);
+            }
+
             throw error;
         }
     }

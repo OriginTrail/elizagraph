@@ -138,7 +138,10 @@ export class TwitterSpaceClient {
 
     constructor(client: ClientBase, runtime: IAgentRuntime) {
         this.client = client;
-        this.scraper = client.twitterClient;
+        // NOTE: Twitter Spaces functionality requires the old Scraper (guest token) library
+        // because Twitter API v2 doesn't fully support Spaces audio yet.
+        // For now, Spaces are disabled. To re-enable, a separate Scraper instance would be needed.
+        this.scraper = null as any; // Disabled - OAuth v2 doesn't support Spaces audio
         this.runtime = runtime;
 
         const charSpaces = runtime.character.twitterSpaces || {};

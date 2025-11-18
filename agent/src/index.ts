@@ -137,6 +137,12 @@ export const wait = (minTime = 1000, maxTime = 3000) => {
     return new Promise((resolve) => setTimeout(resolve, waitTime));
 };
 
+console.log("========================================");
+console.log("MODULE LOAD: agent/src/index.ts STARTING");
+console.log("========================================");
+elizaLogger.log("🟢🟢🟢 MODULE: agent/src/index.ts is being loaded/imported!");
+console.log("ElizaLogger call completed");
+
 const logFetch = async (url: string, options: any) => {
     elizaLogger.debug(`Fetching ${url}`);
     // Disabled to avoid disclosure of sensitive information such as API keys
@@ -722,12 +728,13 @@ export async function initializeClients(
     character: Character,
     runtime: IAgentRuntime,
 ) {
+    elizaLogger.info(`🟢🟢🟢 initializeClients() ENTERED for character: ${character.name}`);
     // each client can only register once
     // and if we want two we can explicitly support it
     const clients: Record<string, any> = {};
     const clientTypes: string[] =
         character.clients?.map((str) => str.toLowerCase()) || [];
-    elizaLogger.log("initializeClients", clientTypes, "for", character.name);
+    elizaLogger.info("🟢 initializeClients - clientTypes:", clientTypes, "for", character.name);
 
     // Start Auto Client if "auto" detected as a configured client
     if (clientTypes.includes(Clients.AUTO)) {
@@ -745,11 +752,17 @@ export async function initializeClients(
         if (telegramClient) clients.telegram = telegramClient;
     }
 
+    elizaLogger.info(`🟢 Checking if TWITTER in clientTypes:`, clientTypes.includes(Clients.TWITTER));
     if (clientTypes.includes(Clients.TWITTER)) {
+        elizaLogger.info(`🟢 Starting Twitter client...`);
         const twitterClient = await TwitterClientInterface.start(runtime);
+        elizaLogger.info(`🟢 TwitterClientInterface.start() returned:`, !!twitterClient);
         if (twitterClient) {
             clients.twitter = twitterClient;
+            elizaLogger.info(`🟢 Twitter client added to clients object`);
         }
+    } else {
+        elizaLogger.info(`🟢 Twitter NOT in clientTypes, skipping Twitter client`);
     }
 
     if (clientTypes.includes(Clients.INSTAGRAM)) {
@@ -1201,6 +1214,8 @@ async function startAgent(
     character: Character,
     directClient: DirectClient,
 ): Promise<AgentRuntime> {
+    console.log(`========= startAgent() called for character: ${character.name} =========`);
+    elizaLogger.info(`🟢 startAgent() called for character: ${character.name}`);
     let db: IDatabaseAdapter & IDatabaseCacheAdapter;
     try {
         character.id ??= stringToUuid(character.name);
@@ -1231,11 +1246,17 @@ async function startAgent(
             token,
         );
 
+        console.log(`========= Runtime created, calling runtime.initialize() =========`);
+        elizaLogger.info(`🟢 Runtime created, calling runtime.initialize()...`);
         // start services/plugins/process knowledge
         await runtime.initialize();
 
+        console.log(`========= Runtime initialized, calling initializeClients() =========`);
+        elizaLogger.info(`🟢 Runtime initialized, calling initializeClients()...`);
         // start assigned clients
         runtime.clients = await initializeClients(character, runtime);
+        console.log(`========= initializeClients() completed =========`);
+        elizaLogger.info(`🟢 initializeClients() completed!`);
 
         // add to container
         directClient.registerAgent(runtime);
@@ -1282,10 +1303,14 @@ const hasValidRemoteUrls = () =>
     process.env.REMOTE_CHARACTER_URLS.startsWith("http");
 
 const startAgents = async () => {
+    console.log("========= startAgents() FUNCTION CALLED =========");
+    elizaLogger.info(`🟢🟢🟢 startAgents() FUNCTION CALLED!`);
     const directClient = new DirectClient();
     let serverPort = Number.parseInt(settings.SERVER_PORT || "3000");
     const args = parseArguments();
     const charactersArg = args.characters || args.character;
+    console.log(`========= Character arg: ${charactersArg} =========`);
+    elizaLogger.info(`🟢🟢🟢 Character arg: ${charactersArg}`);
     let characters = [defaultCharacter];
 
     if (process.env.IQ_WALLET_ADDRESS && process.env.IQSOlRPC) {
@@ -1298,15 +1323,25 @@ const startAgents = async () => {
         characters = await loadCharacters(charactersArg);
     }
 
+    console.log(`========= About to normalize ${characters.length} character(s) =========`);
+    elizaLogger.info(`🟢🟢🟢 About to normalize ${characters.length} character(s)...`);
+
     // Normalize characters for injectable plugins
     characters = await Promise.all(characters.map(normalizeCharacter));
 
+    console.log(`========= Characters normalized. Starting agents =========`);
+    elizaLogger.info(`🟢🟢🟢 Characters normalized. Starting agents...`);
+
     try {
         for (const character of characters) {
+            console.log(`========= Calling startAgent for: ${character.name} =========`);
+            elizaLogger.info(`🟢🟢🟢 Calling startAgent for: ${character.name}`);
             await startAgent(character, directClient);
         }
     } catch (error) {
-        elizaLogger.error("Error starting agents:", error);
+        console.error("========= ERROR starting agents =========", error);
+        elizaLogger.error("🔴🔴🔴 ERROR starting agents:", error);
+        elizaLogger.error("Error stack:", error instanceof Error ? error.stack : undefined);
     }
 
     // Find available port
@@ -1340,8 +1375,14 @@ const startAgents = async () => {
     );
 };
 
+console.log("========================================");
+console.log("BOTTOM OF FILE: About to call startAgents()");
+console.log("========================================");
+elizaLogger.log("🟢🟢🟢 MAIN: About to call startAgents()...");
+
 startAgents().catch((error) => {
-    elizaLogger.error("Unhandled error in startAgents:", error);
+    elizaLogger.error("🔴🔴🔴 Unhandled error in startAgents:", error);
+    elizaLogger.error("Error stack:", error instanceof Error ? error.stack : undefined);
     process.exit(1);
 });
 

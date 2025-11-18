@@ -219,9 +219,7 @@ export class TwitterSearchClient {
 
             let tweetBackground = "";
             if (selectedTweet.isRetweet) {
-                const originalTweet = await this.client.requestQueue.add(() =>
-                    this.client.twitterClient.getTweet(selectedTweet.id)
-                );
+                const originalTweet = await this.client.getTweet(selectedTweet.id);
                 tweetBackground = `Retweeting @${originalTweet.username}: ${originalTweet.text}`;
             }
 
@@ -237,7 +235,7 @@ export class TwitterSearchClient {
             }
 
             let state = await this.runtime.composeState(message, {
-                twitterClient: this.client.twitterClient,
+                twitterClient: this.client, // ClientBase instance with OAuth v2 methods
                 twitterUserName: this.twitterUsername,
                 timeline: formattedHomeTimeline,
                 tweetContext: `${tweetBackground}
