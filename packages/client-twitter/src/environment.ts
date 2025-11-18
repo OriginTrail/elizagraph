@@ -30,10 +30,34 @@ export const twitterEnvSchema = z.object({
     TWITTER_DRY_RUN: z.boolean(),
     TWITTER_USERNAME: z.string().min(1, "X/Twitter username is required"),
     // OAuth 1.0a credentials (required for Twitter API v2)
-    TWITTER_API_KEY: z.string().optional(),
-    TWITTER_API_SECRET: z.string().optional(),
-    TWITTER_ACCESS_TOKEN: z.string().optional(),
-    TWITTER_ACCESS_SECRET: z.string().optional(),
+    TWITTER_API_KEY: z
+        .string()
+        .min(1, "TWITTER_API_KEY is required for Twitter OAuth 1.0a authentication")
+        .refine(
+            (key) => key.length > 10,
+            "TWITTER_API_KEY appears to be invalid (too short)"
+        ),
+    TWITTER_API_SECRET: z
+        .string()
+        .min(1, "TWITTER_API_SECRET is required for Twitter OAuth 1.0a authentication")
+        .refine(
+            (secret) => secret.length > 10,
+            "TWITTER_API_SECRET appears to be invalid (too short)"
+        ),
+    TWITTER_ACCESS_TOKEN: z
+        .string()
+        .min(1, "TWITTER_ACCESS_TOKEN is required for Twitter OAuth 1.0a authentication")
+        .refine(
+            (token) => token.length > 10,
+            "TWITTER_ACCESS_TOKEN appears to be invalid (too short)"
+        ),
+    TWITTER_ACCESS_SECRET: z
+        .string()
+        .min(1, "TWITTER_ACCESS_SECRET is required for Twitter OAuth 1.0a authentication")
+        .refine(
+            (secret) => secret.length > 10,
+            "TWITTER_ACCESS_SECRET appears to be invalid (too short)"
+        ),
     // Legacy credentials (deprecated - Twitter removed guest token support)
     TWITTER_PASSWORD: z.string().optional(),
     TWITTER_EMAIL: z.string().optional(),
@@ -132,26 +156,22 @@ export async function validateTwitterConfig(
                 runtime.getSetting("TWITTER_USERNAME") ||
                 process.env.TWITTER_USERNAME,
 
-            // OAuth 1.0a credentials (Twitter API v2)
+            // OAuth 1.0a credentials (Twitter API v2) - REQUIRED
             TWITTER_API_KEY:
                 runtime.getSetting("TWITTER_API_KEY") ||
-                process.env.TWITTER_API_KEY ||
-                "",
+                process.env.TWITTER_API_KEY,
 
             TWITTER_API_SECRET:
                 runtime.getSetting("TWITTER_API_SECRET") ||
-                process.env.TWITTER_API_SECRET ||
-                "",
+                process.env.TWITTER_API_SECRET,
 
             TWITTER_ACCESS_TOKEN:
                 runtime.getSetting("TWITTER_ACCESS_TOKEN") ||
-                process.env.TWITTER_ACCESS_TOKEN ||
-                "",
+                process.env.TWITTER_ACCESS_TOKEN,
 
             TWITTER_ACCESS_SECRET:
                 runtime.getSetting("TWITTER_ACCESS_SECRET") ||
-                process.env.TWITTER_ACCESS_SECRET ||
-                "",
+                process.env.TWITTER_ACCESS_SECRET,
 
             // Legacy credentials (deprecated)
             TWITTER_PASSWORD:
