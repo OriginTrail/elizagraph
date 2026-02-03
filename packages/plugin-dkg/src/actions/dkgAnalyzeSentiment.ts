@@ -22,20 +22,39 @@ import {
 } from "../constants";
 import { fetchFileFromUrl, getSentimentChart } from "../http-helper";
 
+// Tweet type for sentiment analysis
+interface Tweet {
+    id: string;
+    text: string;
+    username: string;
+    name: string;
+    userId: string;
+    timestamp: number;
+    permanentUrl: string;
+    conversationId: string;
+    inReplyToStatusId?: string;
+    hashtags: string[];
+    mentions: string[];
+    photos: string[];
+    urls: string[];
+    videos: string[];
+    views?: number;
+}
+
 let DkgClient: any = null;
 
 // Helper to get Twitter client from runtime
 function getTwitterClient(runtime: IAgentRuntime): any {
     // Access the Twitter client from the runtime's clients
-    const twitterClient = (runtime as any).clients?.find(
-        (client: any) => client.constructor.name === "TwitterClientInterface"
-    );
-
-    if (!twitterClient) {
+    // clients is a Record<string, any> object, not an array
+    const clients = (runtime as any).clients;
+    
+    if (!clients || !clients.twitter) {
         throw new Error("Twitter client not found in runtime");
     }
 
-    return twitterClient;
+    // The twitter client has a .client property with the actual API methods
+    return clients.twitter;
 }
 
 // Helper to convert v2 API tweet format to legacy format for sentiment analysis
@@ -245,8 +264,17 @@ export const dkgAnalyzeSentiment: Action = {
             nodeApiVersion: "/v1",
         });
 
-        const currentPost = String(state.currentPost);
-        elizaLogger.log(`currentPost: ${currentPost}`);
+        // Get the post content - from Twitter state or from direct message
+        let currentPost = state.currentPost ? String(state.currentPost) : "";
+        
+        // Fallback to message content if currentPost is empty/undefined (e.g., API calls)
+        if (!currentPost || currentPost === "undefined") {
+            const messageText = _message.content?.text || "";
+            currentPost = `Text: ${messageText}`;
+            elizaLogger.log(`Using message content as currentPost: ${currentPost}`);
+        } else {
+            elizaLogger.log(`currentPost: ${currentPost}`);
+        }
 
         const idRegex = /ID:\s(\d+)/;
         let match = currentPost.match(idRegex);
@@ -298,14 +326,30 @@ export const dkgAnalyzeSentiment: Action = {
             return true;
         }
 
+        // Clean the topic for Twitter search - remove $ and # operators (require Pro tier)
+        // but keep the original topic for display
+        const originalTopic = topic.trim();
+        const searchTopic = originalTopic.replace(/[$#]/g, '').trim();
+        
+        // Validate searchTopic is not empty after stripping symbols
+        if (!searchTopic || searchTopic.length < 2) {
+            elizaLogger.warn(`Search topic too short after cleaning: "${searchTopic}" (original: "${originalTopic}")`);
+            callback?.({
+                text: `I couldn't identify a valid ticker or asset name. Please specify a stock (like AAPL, TSLA) or cryptocurrency (like BTC, ETH) to analyze.`,
+                action: "REPLY"
+            });
+            return true;
+        }
+        
         // Use OAuth v2 search (already implemented in client-twitter)
-        elizaLogger.log(`Searching for tweets about: ${topic}`);
+        elizaLogger.log(`Searching for tweets about: ${searchTopic} (original: ${originalTopic})`);
 
         let searchResults;
         try {
             // Access the client's fetchSearchTweets method
+            // Use searchTopic (without $ or #) to avoid cashtag/hashtag operator issues on Basic tier
             searchResults = await twitterClient.client.fetchSearchTweets(
-                topic,
+                searchTopic,
                 100,
                 2 // SearchMode.Latest
             );
@@ -321,6 +365,16 @@ export const dkgAnalyzeSentiment: Action = {
         let tweets = searchResults.tweets.map(convertTweetFormat);
         elizaLogger.log(`Successfully fetched ${tweets.length} tweets.`);
 
+        // Handle case where no tweets are found
+        if (!tweets || tweets.length === 0) {
+            elizaLogger.warn(`No tweets found for topic: ${searchTopic}`);
+            callback?.({
+                text: `I couldn't find any recent tweets about ${originalTopic}. This could mean there's very little discussion about this asset right now, or try a different ticker/name.`,
+                action: "REPLY"
+            });
+            return true;
+        }
+
         tweets = tweets.map((t) => ({
             ...t,
             vaderSentimentScore: calculateVaderScore(t.text),
@@ -332,7 +386,7 @@ export const dkgAnalyzeSentiment: Action = {
 
         const { ka, averageScore, numOfTotalTweets } = await structureKA(
             tweets,
-            topic,
+            originalTopic,
             twitterUser,
             {
                 dkgClient: DkgClient,
@@ -411,13 +465,13 @@ export const dkgAnalyzeSentiment: Action = {
             elizaLogger.log(JSON.stringify(createAssetResult));
 
             // Build the sentiment analysis response
-            let tweetContent = `${topic} sentiment based on top ${tweets.length} latest posts`;
+            let tweetContent = `${originalTopic} sentiment based on top ${tweets.length} latest posts`;
             if (numOfTotalTweets - tweets.length > 0) {
                 tweetContent += ` and ${numOfTotalTweets - tweets.length} existing analysis Knowledge Assets`;
             }
             tweetContent += ` from the past 48 hours: ${sentiment}\n\n`;
 
-            tweetContent += `Top 5 most influential accounts analyzed for ${topic}:\n`;
+            tweetContent += `Top 5 most influential accounts analyzed for ${originalTopic}:\n`;
             tweetContent +=
                 topAuthors
                     .slice(0, 5)
