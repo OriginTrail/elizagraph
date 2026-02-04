@@ -117,7 +117,7 @@ class LocalImageProvider implements ImageProvider {
         if (!this.model || !this.processor || !this.tokenizer) {
             throw new Error("Model components not initialized");
         }
-        const blob = new Blob([imageData], { type: mimeType });
+        const blob = new Blob([new Uint8Array(imageData)], { type: mimeType });
         const image = await RawImage.fromBlob(blob);
         const visionInputs = await this.processor(image);
         const prompts = this.processor.construct_prompts("<DETAILED_CAPTION>");

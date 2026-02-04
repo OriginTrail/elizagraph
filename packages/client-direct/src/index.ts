@@ -28,6 +28,19 @@ import * as path from "path";
 import { createVerifiableLogApiRouter } from "./verifiable-log-api.ts";
 import OpenAI from "openai";
 
+/**
+ * Normalize a value that might be `string | string[] | undefined | null`
+ * to a guaranteed string.
+ */
+function toStr(value: unknown, fallback = ""): string {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+        const first = value[0];
+        return typeof first === "string" ? first : fallback;
+    }
+    return fallback;
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = path.join(process.cwd(), "data", "uploads");
@@ -152,7 +165,7 @@ export class DirectClient {
             upload.single("file"),
             async (req: CustomRequest, res: express.Response) => {
                 const audioFile = req.file; // Access the uploaded file using req.file
-                const agentId = req.params.agentId;
+                const agentId = toStr(req.params.agentId); // FIX: normalize
 
                 if (!audioFile) {
                     res.status(400).send("No audio file provided");
@@ -160,14 +173,13 @@ export class DirectClient {
                 }
 
                 let runtime = this.agents.get(agentId);
-                const apiKey = runtime.getSetting("OPENAI_API_KEY");
 
                 // if runtime is null, look for runtime with the same name
                 if (!runtime) {
                     runtime = Array.from(this.agents.values()).find(
                         (a) =>
                             a.character.name.toLowerCase() ===
-                            agentId.toLowerCase()
+                            agentId.toLowerCase() // FIX: agentId is string now
                     );
                 }
 
@@ -175,6 +187,8 @@ export class DirectClient {
                     res.status(404).send("Agent not found");
                     return;
                 }
+
+                const apiKey = runtime.getSetting("OPENAI_API_KEY");
 
                 const openai = new OpenAI({
                     apiKey,
@@ -188,16 +202,17 @@ export class DirectClient {
                 res.json(transcription);
             }
         );
-
         this.app.post(
             "/:agentId/message",
             upload.single("file"),
             async (req: express.Request, res: express.Response) => {
-                const agentId = req.params.agentId;
+                const agentId = toStr(req.params.agentId); // FIX
+
+                // FIX: normalize before stringToUuid (avoids string|string[] -> string)
                 const roomId = stringToUuid(
-                    req.body.roomId ?? "default-room-" + agentId
+                    toStr(req.body?.roomId, "default-room-" + agentId)
                 );
-                const userId = stringToUuid(req.body.userId ?? "user");
+                const userId = stringToUuid(toStr(req.body?.userId, "user"));
 
                 let runtime = this.agents.get(agentId);
 
@@ -206,7 +221,7 @@ export class DirectClient {
                     runtime = Array.from(this.agents.values()).find(
                         (a) =>
                             a.character.name.toLowerCase() ===
-                            agentId.toLowerCase()
+                            agentId.toLowerCase() // FIX
                     );
                 }
 
@@ -218,12 +233,13 @@ export class DirectClient {
                 await runtime.ensureConnection(
                     userId,
                     roomId,
-                    req.body.userName,
-                    req.body.name,
+                    toStr(req.body?.userName), // FIX: safe string
+                    toStr(req.body?.name), // FIX: safe string
                     "direct"
                 );
 
-                const text = req.body.text;
+                const text = toStr(req.body?.text); // FIX: safe string
+
                 // if empty text, directly return
                 if (!text) {
                     res.json([]);
@@ -350,19 +366,19 @@ export class DirectClient {
                 }
             }
         );
-
         this.app.post(
             "/agents/:agentIdOrName/hyperfi/v1",
             async (req: express.Request, res: express.Response) => {
                 // get runtime
-                const agentId = req.params.agentIdOrName;
+                const agentId = toStr(req.params.agentIdOrName); // FIX
                 let runtime = this.agents.get(agentId);
+
                 // if runtime is null, look for runtime with the same name
                 if (!runtime) {
                     runtime = Array.from(this.agents.values()).find(
                         (a) =>
                             a.character.name.toLowerCase() ===
-                            agentId.toLowerCase()
+                            agentId.toLowerCase() // FIX
                     );
                 }
                 if (!runtime) {
@@ -370,35 +386,35 @@ export class DirectClient {
                     return;
                 }
 
-                // can we be in more than one hyperfi world at once
-                // but you may want the same context is multiple worlds
-                // this is more like an instanceId
-                const roomId = stringToUuid(req.body.roomId ?? "hyperfi");
+                // FIX: normalize before stringToUuid
+                const roomId = stringToUuid(toStr(req.body?.roomId, "hyperfi"));
 
                 const body = req.body;
 
                 // hyperfi specific parameters
-                let nearby = [];
-                let availableEmotes = [];
+                let nearby: string[] = [];
+                let availableEmotes: string[] = [];
 
-                if (body.nearby) {
-                    nearby = body.nearby;
+                if (Array.isArray(body?.nearby)) {
+                    nearby = body.nearby.map((v: unknown) => toStr(v));
                 }
-                if (body.messages) {
-                    // loop on the messages and record the memories
-                    // might want to do this in parallel
-                    for (const msg of body.messages) {
+                if (Array.isArray(body?.messages)) {
+                    for (const rawMsg of body.messages) {
+                        const msg = toStr(rawMsg);
                         const parts = msg.split(/:\s*/);
-                        const mUserId = stringToUuid(parts[0]);
+                        const username = toStr(parts[0]);
+                        const mUserId = stringToUuid(username);
+
                         await runtime.ensureConnection(
                             mUserId,
                             roomId, // where
-                            parts[0], // username
-                            parts[0], // userScreeName?
+                            username, // username
+                            username, // screenName
                             "hyperfi"
                         );
+
                         const content: Content = {
-                            text: parts[1] || "",
+                            text: toStr(parts[1] || ""),
                             attachments: [],
                             source: "hyperfi",
                             inReplyTo: undefined,
@@ -413,12 +429,13 @@ export class DirectClient {
                         await runtime.messageManager.createMemory(memory);
                     }
                 }
-                if (body.availableEmotes) {
-                    availableEmotes = body.availableEmotes;
+                if (Array.isArray(body?.availableEmotes)) {
+                    availableEmotes = body.availableEmotes.map((v: unknown) =>
+                        toStr(v)
+                    );
                 }
 
                 const content: Content = {
-                    // we need to compose who's near and what emotes are available
                     text: JSON.stringify(req.body),
                     attachments: [],
                     source: "hyperfi",
@@ -571,23 +588,16 @@ export class DirectClient {
                                 createdAt: Date.now(),
                             };
 
-                            // run evaluators (generally can be done in parallel with processActions)
-                            // can an evaluator modify memory? it could but currently doesn't
                             runtime.evaluate(memory, state).then(() => {
-                                // only need to call if responseMessage.content.action is set
                                 if (contentObj.action) {
-                                    // pass memory (query) to any actions to call
                                     runtime.processActions(
                                         memory,
                                         [responseMessage],
                                         state,
                                         async (_newMessages) => {
-                                            // FIXME: this is supposed override what the LLM said/decided
-                                            // but the promise doesn't make this possible
-                                            //message = newMessages;
                                             return [memory];
                                         }
-                                    ); // 0.674s
+                                    );
                                 }
                                 resolve(true);
                             });
@@ -596,11 +606,10 @@ export class DirectClient {
                 res.json({ response: hfOut });
             }
         );
-
         this.app.post(
             "/:agentId/image",
             async (req: express.Request, res: express.Response) => {
-                const agentId = req.params.agentId;
+                const agentId = toStr(req.params.agentId); // FIX (safe)
                 const agent = this.agents.get(agentId);
                 if (!agent) {
                     res.status(404).send("Agent not found");
@@ -643,18 +652,19 @@ export class DirectClient {
 
                     const data = await response.json();
                     res.json(data);
-                } catch (error) {
+                } catch (error: any) {
                     res.status(500).json({
                         error: "Please create an account at bakery.bagel.net and get an API key. Then set the BAGEL_API_KEY environment variable.",
-                        details: error.message,
+                        details: error?.message ?? String(error),
                     });
                 }
             }
         );
+
         this.app.get(
             "/fine-tune/:assetId",
             async (req: express.Request, res: express.Response) => {
-                const assetId = req.params.assetId;
+                const assetId = toStr(req.params.assetId); // FIX
                 const downloadDir = path.join(
                     process.cwd(),
                     "downloads",
@@ -717,24 +727,25 @@ export class DirectClient {
                         fileName: fileName,
                         fileSize: stats.size,
                     });
-                } catch (error) {
+                } catch (error: any) {
                     elizaLogger.error("Detailed error:", error);
                     res.status(500).json({
                         error: "Failed to download files from BagelDB",
-                        details: error.message,
-                        stack: error.stack,
+                        details: error?.message ?? String(error),
+                        stack: error?.stack,
                     });
                 }
             }
         );
-
         this.app.post("/:agentId/speak", async (req, res) => {
-            const agentId = req.params.agentId;
+            const agentId = toStr(req.params.agentId); // FIX
+
+            // FIX: normalize before stringToUuid
             const roomId = stringToUuid(
-                req.body.roomId ?? "default-room-" + agentId
+                toStr(req.body?.roomId, "default-room-" + agentId)
             );
-            const userId = stringToUuid(req.body.userId ?? "user");
-            const text = req.body.text;
+            const userId = stringToUuid(toStr(req.body?.userId, "user"));
+            const text = toStr(req.body?.text);
 
             if (!text) {
                 res.status(400).send("No text provided");
@@ -747,7 +758,8 @@ export class DirectClient {
             if (!runtime) {
                 runtime = Array.from(this.agents.values()).find(
                     (a) =>
-                        a.character.name.toLowerCase() === agentId.toLowerCase()
+                        a.character.name.toLowerCase() ===
+                        agentId.toLowerCase() // FIX
                 );
             }
 
@@ -761,8 +773,8 @@ export class DirectClient {
                 await runtime.ensureConnection(
                     userId,
                     roomId,
-                    req.body.userName,
-                    req.body.name,
+                    toStr(req.body?.userName),
+                    toStr(req.body?.name),
                     "direct"
                 );
 
@@ -891,20 +903,20 @@ export class DirectClient {
                 });
 
                 res.send(Buffer.from(audioBuffer));
-            } catch (error) {
+            } catch (error: any) {
                 elizaLogger.error(
                     "Error processing message or generating speech:",
                     error
                 );
                 res.status(500).json({
                     error: "Error processing message or generating speech",
-                    details: error.message,
+                    details: error?.message ?? String(error),
                 });
             }
         });
 
         this.app.post("/:agentId/tts", async (req, res) => {
-            const text = req.body.text;
+            const text = toStr(req.body?.text);
 
             if (!text) {
                 res.status(400).send("No text provided");
@@ -964,14 +976,14 @@ export class DirectClient {
                 });
 
                 res.send(Buffer.from(audioBuffer));
-            } catch (error) {
+            } catch (error: any) {
                 elizaLogger.error(
                     "Error processing message or generating speech:",
                     error
                 );
                 res.status(500).json({
                     error: "Error processing message or generating speech",
-                    details: error.message,
+                    details: error?.message ?? String(error),
                 });
             }
         });
@@ -1042,3 +1054,4 @@ export const DirectClientInterface: Client = {
 };
 
 export default DirectClientInterface;
+
