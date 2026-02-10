@@ -60,7 +60,8 @@
         "@ai-sdk/provider-utils": "1.0.22",
         "@ai-sdk/mistral>@ai-sdk/provider": "0.0.26",
         "@ai-sdk/mistral>@ai-sdk/provider-utils": "1.0.22"
-      }
+      },
+      "neverBuiltDependencies": ["@discordjs/opus", "canvas", "keytar", "sodium-native", "usb", "node-hid"]
     },
     "engines": {
       "node": "23.3.0"
