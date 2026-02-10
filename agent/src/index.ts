@@ -8,7 +8,8 @@ import { RedisClient } from "@elizaos/adapter-redis";
 import { SqliteDatabaseAdapter } from "@elizaos/adapter-sqlite";
 import { SupabaseDatabaseAdapter } from "@elizaos/adapter-supabase";
 import { AutoClientInterface } from "@elizaos/client-auto";
-import { DiscordClientInterface } from "@elizaos/client-discord";
+// Discord import moved to dynamic import to avoid crash when discord.js has version issues
+// import { DiscordClientInterface } from "@elizaos/client-discord";
 import { InstagramClientInterface } from "@elizaos/client-instagram";
 import { LensAgentClient } from "@elizaos/client-lens";
 import { SlackClientInterface } from "@elizaos/client-slack";
@@ -747,8 +748,13 @@ export async function initializeClients(
     }
 
     if (clientTypes.includes(Clients.DISCORD)) {
-        const discordClient = await DiscordClientInterface.start(runtime);
-        if (discordClient) clients.discord = discordClient;
+        try {
+            const { DiscordClientInterface } = await import("@elizaos/client-discord");
+            const discordClient = await DiscordClientInterface.start(runtime);
+            if (discordClient) clients.discord = discordClient;
+        } catch (error) {
+            elizaLogger.error("Failed to load Discord client:", error.message);
+        }
     }
 
     if (clientTypes.includes(Clients.TELEGRAM)) {
