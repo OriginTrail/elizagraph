@@ -62,9 +62,9 @@ Here is the descriptions of images in the Current post.
 ` + messageCompletionFooter;
 
 export const twitterShouldRespondTemplate = (targetUsersStr: string) =>
-    `# INSTRUCTIONS: Determine if {{agentName}} (@{{twitterUserName}}) should respond to the message and participate in the conversation. Do not comment. Just respond with "true" or "false".
+    `# INSTRUCTIONS: Determine if {{agentName}} (@{{twitterUserName}}) should respond to the message and participate in the conversation. Do not comment. Just respond with [RESPOND], [IGNORE], or [STOP].
 
-Response options are RESPOND, IGNORE and STOP.
+Response options are [RESPOND], [IGNORE] and [STOP].
 
 PRIORITY RULE: ALWAYS RESPOND to these users regardless of topic or message content: ${targetUsersStr}. Topic relevance should be ignored for these users.
 

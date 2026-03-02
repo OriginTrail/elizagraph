@@ -14,22 +14,19 @@ Your response must include one of the options.`;
 export const parseShouldRespondFromText = (
     text: string
 ): "RESPOND" | "IGNORE" | "STOP" | null => {
-    const match = text
-        .split("\n")[0]
-        .trim()
-        .replace("[", "")
-        .toUpperCase()
-        .replace("]", "")
-        .match(/^(RESPOND|IGNORE|STOP)$/i);
-    return match
-        ? (match[0].toUpperCase() as "RESPOND" | "IGNORE" | "STOP")
-        : text.includes("RESPOND")
-          ? "RESPOND"
-          : text.includes("IGNORE")
-            ? "IGNORE"
-            : text.includes("STOP")
-              ? "STOP"
-              : null;
+    const firstLine = text.split("\n")[0].trim();
+    const cleaned = firstLine.replace("[", "").toUpperCase().replace("]", "");
+    const match = cleaned.match(/^(RESPOND|IGNORE|STOP)$/i);
+    if (match) {
+        return match[0].toUpperCase() as "RESPOND" | "IGNORE" | "STOP";
+    }
+    if (text.includes("RESPOND")) return "RESPOND";
+    if (text.includes("IGNORE")) return "IGNORE";
+    if (text.includes("STOP")) return "STOP";
+    const lower = firstLine.toLowerCase();
+    if (lower === "true" || lower === "yes") return "RESPOND";
+    if (lower === "false" || lower === "no") return "IGNORE";
+    return null;
 };
 
 export const booleanFooter = `Respond with only a YES or a NO.`;
