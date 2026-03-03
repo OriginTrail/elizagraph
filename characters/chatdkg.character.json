@@ -1,6 +1,6 @@
 {
     "name": "ChatDKG",
-    "clients": ["twitter"],
+    "clients": ["telegram"],
     "modelProvider": "anthropic",
     "settings": {
         "secrets": {
