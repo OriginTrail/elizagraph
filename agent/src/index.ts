@@ -4,13 +4,14 @@ import { RedisClient } from "@elizaos/adapter-redis";
 import { SqliteDatabaseAdapter } from "@elizaos/adapter-sqlite";
 import { SupabaseDatabaseAdapter } from "@elizaos/adapter-supabase";
 import { AutoClientInterface } from "@elizaos/client-auto";
-import { DiscordClientInterface } from "@elizaos/client-discord";
-import { InstagramClientInterface } from "@elizaos/client-instagram";
-import { LensAgentClient } from "@elizaos/client-lens";
-import { SlackClientInterface } from "@elizaos/client-slack";
+// Discord and other unused clients moved to dynamic imports to avoid startup crashes
+// import { DiscordClientInterface } from "@elizaos/client-discord";
+// import { InstagramClientInterface } from "@elizaos/client-instagram";
+// import { LensAgentClient } from "@elizaos/client-lens";
+// import { SlackClientInterface } from "@elizaos/client-slack";
 import { TelegramClientInterface } from "@elizaos/client-telegram";
 import { TwitterClientInterface } from "@elizaos/client-twitter";
-import { FarcasterClientInterface } from "@elizaos/client-farcaster";
+// import { FarcasterClientInterface } from "@elizaos/client-farcaster";
 import { DirectClient } from "@elizaos/client-direct";
 // import { agentKitPlugin } from "@elizaos/plugin-agentkit";
 // import { ReclaimAdapter } from "@elizaos/plugin-reclaim";
@@ -736,8 +737,13 @@ export async function initializeClients(
     }
 
     if (clientTypes.includes(Clients.DISCORD)) {
-        const discordClient = await DiscordClientInterface.start(runtime);
-        if (discordClient) clients.discord = discordClient;
+        try {
+            const { DiscordClientInterface } = await import("@elizaos/client-discord");
+            const discordClient = await DiscordClientInterface.start(runtime);
+            if (discordClient) clients.discord = discordClient;
+        } catch (error) {
+            elizaLogger.error("Failed to load Discord client:", error.message);
+        }
     }
 
     if (clientTypes.includes(Clients.TELEGRAM)) {
@@ -753,22 +759,33 @@ export async function initializeClients(
     }
 
     if (clientTypes.includes(Clients.INSTAGRAM)) {
-        const instagramClient = await InstagramClientInterface.start(runtime);
-        if (instagramClient) {
-            clients.instagram = instagramClient;
+        try {
+            const { InstagramClientInterface } = await import("@elizaos/client-instagram");
+            const instagramClient = await InstagramClientInterface.start(runtime);
+            if (instagramClient) clients.instagram = instagramClient;
+        } catch (error) {
+            elizaLogger.error("Failed to load Instagram client:", error.message);
         }
     }
 
     if (clientTypes.includes(Clients.FARCASTER)) {
-        const farcasterClient = await FarcasterClientInterface.start(runtime);
-        if (farcasterClient) {
-            clients.farcaster = farcasterClient;
+        try {
+            const { FarcasterClientInterface } = await import("@elizaos/client-farcaster");
+            const farcasterClient = await FarcasterClientInterface.start(runtime);
+            if (farcasterClient) clients.farcaster = farcasterClient;
+        } catch (error) {
+            elizaLogger.error("Failed to load Farcaster client:", error.message);
         }
     }
     if (clientTypes.includes("lens")) {
-        const lensClient = new LensAgentClient(runtime);
-        lensClient.start();
-        clients.lens = lensClient;
+        try {
+            const { LensAgentClient } = await import("@elizaos/client-lens");
+            const lensClient = new LensAgentClient(runtime);
+            lensClient.start();
+            clients.lens = lensClient;
+        } catch (error) {
+            elizaLogger.error("Failed to load Lens client:", error.message);
+        }
     }
 
     elizaLogger.log("client keys", Object.keys(clients));

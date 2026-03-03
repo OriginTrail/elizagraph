@@ -15,7 +15,8 @@ import {
 } from "@elizaos/core";
 
 import type { TeeLogQuery, TeeLogService } from "@elizaos/plugin-tee-log";
-import { REST, Routes } from "discord.js";
+// discord.js import moved to dynamic to avoid crash when discord dependencies have issues
+// import { REST, Routes } from "discord.js";
 import type { DirectClient } from ".";
 import { validateUuid } from "@elizaos/core";
 
@@ -226,9 +227,10 @@ export function createApiRouter(
         }
 
         const API_TOKEN = runtime.getSetting("DISCORD_API_TOKEN") as string;
-        const rest = new REST({ version: "10" }).setToken(API_TOKEN);
 
         try {
+            const { REST, Routes } = await import("discord.js");
+            const rest = new REST({ version: "10" }).setToken(API_TOKEN);
             const guilds = (await rest.get(Routes.userGuilds())) as Array<any>;
 
             res.json({
